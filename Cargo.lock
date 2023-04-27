@@ -37,6 +37,7 @@ dependencies = [
  "cortex-m-rt",
  "panic-halt",
  "stm32h7xx-hal",
+ "stm32ral",
 ]
 
 [[package]]
@@ -229,6 +230,15 @@ dependencies = [
  "paste",
  "stm32h7",
  "void",
+]
+
+[[package]]
+name = "stm32ral"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48ae31099177ef1bbdeee6f1b9a38d869aa6c8c3232cf248c39642875d42c532"
+dependencies = [
+ "cortex-m",
 ]
 
 [[package]]
