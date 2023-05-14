@@ -17,21 +17,37 @@ fn main() -> ! {
     let ccdr = rcc.sys_ck(100.MHz()).freeze(pwrcfg, &dp.SYSCFG);
 
     let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
+    let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
 
     // Configure PE1 as output.
     let mut led = gpioe.pe1.into_push_pull_output();
+    let mut led2 = gpiob.pb0.into_push_pull_output();
 
     // Get the delay provider.
     let mut delay = cp.SYST.delay(ccdr.clocks);
 
-    let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
+    //let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
 
     loop {
-        led.set_high();
-        delay.delay_ms(core_based_num);
+        match () {
+            #[cfg(core = "0")]
+            () => {
+                led.set_high();
+                delay.delay_ms(500_u16);
+        
+                led.set_low();
+                delay.delay_ms(500_u16);
+            }
+            #[cfg(not(core = "0"))]
+            () => {
+                led2.set_high();
+                delay.delay_ms(500_u16);
+        
+                led2.set_low();
+                delay.delay_ms(500_u16);
+            }
+        }
 
-        led.set_low();
-        delay.delay_ms(core_based_num);
     }
 
 }
