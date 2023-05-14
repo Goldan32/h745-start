@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.3"
+microamp = "0.1.0-alpha.7"
 panic-halt = "0.2.0"
 stm32h7xx-hal = {version = "0.14.0", features = ["stm32h747cm7"]}
 

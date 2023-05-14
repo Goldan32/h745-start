@@ -35,6 +35,7 @@ version = "0.1.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
+ "microamp",
  "panic-halt",
  "stm32h7xx-hal",
 ]
@@ -123,6 +124,26 @@ name = "gcd"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d758ba1b47b00caf47f24925c0074ecb20d6dfcffe7f6d53395c0465674841a"
+
+[[package]]
+name = "microamp"
+version = "0.1.0-alpha.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5d530f6ab90571d65a292adf305aa8ea702430eee32c46bb538e9dd1bc9f036"
+dependencies = [
+ "microamp-macros",
+]
+
+[[package]]
+name = "microamp-macros"
+version = "0.1.0-alpha.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10d5f71d3357ee01de16b5f7b27110ee2c92336c311afbb83ec720442bf01577"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "nb"
