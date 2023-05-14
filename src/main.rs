@@ -24,12 +24,14 @@ fn main() -> ! {
     // Get the delay provider.
     let mut delay = cp.SYST.delay(ccdr.clocks);
 
+    let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
+
     loop {
         led.set_high();
-        delay.delay_ms(500_u16);
+        delay.delay_ms(core_based_num);
 
         led.set_low();
-        delay.delay_ms(500_u16);
+        delay.delay_ms(core_based_num);
     }
 
 }

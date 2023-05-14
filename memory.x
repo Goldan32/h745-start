@@ -20,39 +20,3 @@ MEMORY
 /* stm32h7xx-hal uses a PROVIDE that expects RAM and FLASH symbols to exist */
 REGION_ALIAS(RAM, DTCMRAM);
 REGION_ALIAS(FLASH, FLASH1);
-
-/* The location of the stack can be overridden using the
-   `_stack_start` symbol.  Place the stack at the end of RAM */
-_stack_start = ORIGIN(RAM) + LENGTH(RAM);
-
-SECTIONS
-{
-    .itcmram : ALIGN(4) {
-        *(.itcmram .itcmram.*);
-        . = ALIGN(4);
-    } > ITCMRAM
-
-    .dtcmram : ALIGN(4) {
-        *(.dtcmram .dtcmram.*);
-        . = ALIGN(4);
-    } > DTCMRAM
-
-    .axisram : ALIGN(8) {
-        *(.axisram .axisram.*);
-        . = ALIGN(8);
-    } > AXISRAM
-
-    /* The SRAM1 and SRAM2 section are commonly used as the stack and
-       heap for the CM4 core in dualcore versions and should thus not
-       be used in examples */
-
-    .sram3 (NOLOAD) : ALIGN(4) {
-        *(.sram3 .sram3.*);
-        . = ALIGN(4);
-    } > SRAM3
-
-    .sram4 (NOLOAD) : ALIGN(4) {
-        *(.sram4 .sram4.*);
-        . = ALIGN(4);
-    } > SRAM4
-};
