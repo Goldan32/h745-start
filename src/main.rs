@@ -1,9 +1,11 @@
 #![no_main]
 #![no_std]
 
+use core::sync::atomic::{AtomicU8, Ordering};
 use cortex_m_rt::entry;
 use stm32h7xx_hal::{pac, prelude::*};
 use panic_halt as _;
+use microamp::shared;
 
 #[entry]
 fn main() -> ! {
@@ -28,18 +30,40 @@ fn main() -> ! {
 
     //let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
 
+    const CORE0: u8 = 0;
+    const CORE1: u8 = 1;
+    const LOCKED: u8 = 2;
+
+    #[shared]
+    static mut SHARED: u32 = 0;
+
+    #[shared]
+    static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
+
+    let mut delay_time = 500_u16;
+
+    let (our_turn, next_core) = if cfg!(core = "0") {
+        (CORE0, CORE1)
+    } else {
+        (CORE1, CORE0)
+    };
+
     loop {
         match () {
             #[cfg(core = "0")]
             () => {
+                // Busy wait for semaphore
+                unsafe {if SHARED > 5 {delay_time = 1000_u16}}
                 led.set_high();
-                delay.delay_ms(500_u16);
+                delay.delay_ms(delay_time);
         
                 led.set_low();
-                delay.delay_ms(500_u16);
+                delay.delay_ms(delay_time);
             }
             #[cfg(not(core = "0"))]
             () => {
+                // Busy wait for semaphore
+                unsafe {SHARED += 1;}
                 led2.set_high();
                 delay.delay_ms(500_u16);
         
