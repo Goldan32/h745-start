@@ -10,6 +10,28 @@ use core::fmt::Write;
 
 #[entry]
 fn main() -> ! {
+
+    const CORE0: u8 = 0;
+    const CORE1: u8 = 1;
+    const LOCKED: u8 = 2;
+
+    #[shared]
+    static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
+
+    let (our_turn, next_core) = if cfg!(core = "0") {
+        (CORE0, CORE1)
+    } else {
+        (CORE1, CORE0)
+    };
+
+
+    while SEMAPHORE
+        .compare_exchange(our_turn, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        // busy wait if the lock is held by the other core
+    }
+
     let cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
 
@@ -40,41 +62,26 @@ fn main() -> ! {
     // Get the delay provider.
     let mut delay = cp.SYST.delay(ccdr.clocks);
 
-    //let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
+    SEMAPHORE.store(next_core, Ordering::Release);
 
-    const CORE0: u8 = 0;
-    const CORE1: u8 = 1;
-    const LOCKED: u8 = 2;
+    //let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
 
     #[shared]
     static mut SHARED: u32 = 0;
 
-    #[shared]
-    static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
+    unsafe {SHARED = 0;}
 
     let mut delay_time = 500_u16;
 
-    let (our_turn, next_core) = if cfg!(core = "0") {
-        (CORE0, CORE1)
-    } else {
-        (CORE1, CORE0)
-    };
-
     loop {
-
-        // Busy wait while semaphore is taken
-        while SEMAPHORE
-            .compare_exchange(our_turn, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
-            .is_err()
-        {
-            // busy wait if the lock is held by the other core
-        }
 
         match () {
             #[cfg(core = "0")]
             () => {
-                writeln!(tx, "Hello World!\r\n").unwrap();
-                unsafe {if SHARED > 5 {delay_time = 1000_u16}}
+                unsafe {if SHARED > 5 {
+                    delay_time = 1000_u16;
+                    writeln!(tx, "SHARED: {SHARED}\r\n").unwrap();
+                }}
                 // Release the semaphore
                 SEMAPHORE.store(next_core, Ordering::Release);
                 led.set_high();
@@ -87,7 +94,6 @@ fn main() -> ! {
             () => {
                 unsafe {SHARED += 1;}
                 // Release the semaphore
-                SEMAPHORE.store(next_core, Ordering::Release);
                 led2.set_high();
                 delay.delay_ms(500_u16);
         
