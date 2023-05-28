@@ -61,12 +61,22 @@ fn main() -> ! {
     };
 
     loop {
+
+        // Busy wait while semaphore is taken
+        while SEMAPHORE
+            .compare_exchange(our_turn, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            // busy wait if the lock is held by the other core
+        }
+
         match () {
             #[cfg(core = "0")]
             () => {
                 writeln!(tx, "Hello World!\r\n").unwrap();
-                // Busy wait for semaphore
                 unsafe {if SHARED > 5 {delay_time = 1000_u16}}
+                // Release the semaphore
+                SEMAPHORE.store(next_core, Ordering::Release);
                 led.set_high();
                 delay.delay_ms(delay_time);
         
@@ -75,8 +85,9 @@ fn main() -> ! {
             }
             #[cfg(not(core = "0"))]
             () => {
-                // Busy wait for semaphore
                 unsafe {SHARED += 1;}
+                // Release the semaphore
+                SEMAPHORE.store(next_core, Ordering::Release);
                 led2.set_high();
                 delay.delay_ms(500_u16);
         
@@ -84,7 +95,6 @@ fn main() -> ! {
                 delay.delay_ms(500_u16);
             }
         }
-
     }
 
 }
