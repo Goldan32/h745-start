@@ -6,6 +6,7 @@ use cortex_m_rt::entry;
 use stm32h7xx_hal::{pac, prelude::*};
 use panic_halt as _;
 use microamp::shared;
+use core::fmt::Write;
 
 #[entry]
 fn main() -> ! {
@@ -20,10 +21,21 @@ fn main() -> ! {
 
     let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
     let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
+    let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
     // Configure PE1 as output.
     let mut led = gpioe.pe1.into_push_pull_output();
     let mut led2 = gpiob.pb0.into_push_pull_output();
+
+    let tx = gpiod.pd8.into_alternate();
+    let rx = gpiod.pd9.into_alternate();
+
+    let serial = dp
+        .USART3
+        .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+        .unwrap();
+
+    let (mut tx, mut rx) = serial.split();
 
     // Get the delay provider.
     let mut delay = cp.SYST.delay(ccdr.clocks);
@@ -52,6 +64,7 @@ fn main() -> ! {
         match () {
             #[cfg(core = "0")]
             () => {
+                writeln!(tx, "Hello World!\r\n").unwrap();
                 // Busy wait for semaphore
                 unsafe {if SHARED > 5 {delay_time = 1000_u16}}
                 led.set_high();
