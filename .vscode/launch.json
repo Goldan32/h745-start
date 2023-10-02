@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Blinky",
+            "request": "launch",
+            "type": "cortex-debug",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceFolder}/target/thumbv7em-none-eabihf/debug/blink",
+            "servertype": "openocd",
+            "configFiles": ["st_nucleo_h745zi.cfg"],
+            "preLaunchTask": "Build binary",
+            "preLaunchCommands": [
+                "monitor init",
+                "monitor reset init",
+                "monitor halt",
+                "monitor flash write_image erase ./target/thumbv7em-none-eabihf/debug/blink.bin 0x08000000"
+            ],
+            "postLaunchCommands": ["continue"] // This is to prevent the debugger from stopping before the program is executed        
+        }
+    ]
+}
