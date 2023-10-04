@@ -1,0 +1,4 @@
+# Creation of the docker image is completely agnostic to the contents of this project.
+# Ignore everything except the dockerfile when building the image to decrease waiting time.
+*
+!Dockerfile

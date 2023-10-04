@@ -1,2 +1,4 @@
 /target
 /artifacts
+.vscode/.cortex*
+.bash_history
