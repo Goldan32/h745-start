@@ -1,0 +1,61 @@
+// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.128.0/containers/docker-existing-dockerfile
+{
+	"name": "Existing Dockerfile",
+
+	// Sets the run context to one level up instead of the .devcontainer folder.
+	"context": "..",
+
+	// Update the 'dockerFile' property if you aren't using the standard 'Dockerfile' filename.
+	"dockerFile": "../Dockerfile",
+
+	// Set *default* container specific settings.json values on container create.
+    // Add the IDs of extensions you want installed when the container is created.
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "tamasfe.even-better-toml",
+                "matklad.rust-analyzer",
+                "serayuzgur.crates",
+                "marus25.cortex-debug",
+                "vadimcn.vscode-lldb",
+                "yzhang.markdown-all-in-one",
+                "ms-python.python",
+                "ivory-lab.jenkinsfile-supp",
+                "ivory-lab.jenkinsfile-support"
+            ],
+            "settings": {
+                "terminal.integrated.shell.linux": null
+            }
+        }
+    },
+	
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Uncomment the next line to run commands after the container is created - for example installing curl.
+	// "postCreateCommand": "apt-get update && apt-get install -y curl",
+
+	// Uncomment when using a ptrace-based debugger like C++, Go, and Rust
+	"runArgs": [ 
+		"--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined", // vscode defaults 
+		"--privileged", // So our container can follow sybolic links to the actuall target device on the host.
+	],
+
+	// This command creates a backround process to iterface to the actuall board.
+	// For further information see...
+	// - https://rust-embedded.github.io/discovery/05-led-roulette/flash-it.html
+	// - https://linuxize.com/post/linux-nohup-command/
+	"postStartCommand": [
+		"cargo make startup-openocd"
+	],
+
+	// Uncomment to use the Docker CLI from inside the container. See https://aka.ms/vscode-remote/samples/docker-from-docker.
+	// "mounts": [ "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind" ],
+
+	// Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
+	//"remoteUser": "rustacean",
+
+	"mounts": ["source=/dev,target=/dev,type=bind"] // Actually allows the target device to be accessed 
+													// within the container.
+}
