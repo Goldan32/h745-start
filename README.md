@@ -1,21 +1,104 @@
-# STM32H745 Starting Repo
-Flash target
+# STM32H745 Dual-Core Project
 
+## Build Project
+
+### Native environment
+
+Building the project requires the following setup on the host machine, which preferebly runs a Debian-like linux distribution:
+
+**1. Install the following apt packages**
 ```
+libudev-dev
+gdb-multiarch
+picocom
+openocd
+curl
+make
+stlink-tools
+binutils-multiarch
+xxd
+binutils-arm-none-eabi
+srecord
+```
+
+**2. Install Rust and Cargo**
+
+**3. Install additional Rust tools**
+
+```bash
+rustup component add llvm-tools-preview
+rustup target add thumbv7em-none-eabihf
+rustup install nightly
+rustup +nightly target add thumbv7em-none-eabihf
+cargo install cargo-binutils --vers 0.3.6
+cargo install cargo-flash
+cargo install microamp-tools --git https://github.com/rtfm-rs/microamp
+```
+
+**4. Use the makefile from the project to build images**
+
+```bash
+make
+```
+
+After this step there are multiple outputs in the `artifacts` directory.
+
+- image-0.bin and image-1.bin: Binary image for each core
+- image-0.elf and image-1.elf: ELF image for each core
+- image-0.hex and image-1.hex: HEX image for each core
+- merge.hex: A merged HEX image that contains code for both cores
+
+### Docker
+
+**1. Install the following dependencies**
+
+- VSCode, with extensions
+  - [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- Docker
+
+**2. Open the project with VSCode**
+
+**3. Reopen project in container**
+
+Press *Ctrl+Shift+P* and start typing `Dev Container: Reopen in Container` and select that option.
+
+**4. Build using the command line**
+
+The container is built, use the shell in VSCode to build the project using the makefile.
+
+```bash
+make
+```
+
+## Flash image to target
+
+### Single core - single core project (earlier commits)
+
+Use `cargo flash` utility
+
+```bash
 cargo flash --chip STM32H745ZITx
 ```
 
-or for single core
+### Single core - dual core project
 
-```
+Use `cargo flash` utility
+
+```bash
+# Core 0
+cargo flash --elf target/thumbv7em-none-eabihf/release/blink-0 --chip STM32H745ZITx
+
+# Core 1
 cargo flash --elf target/thumbv7em-none-eabihf/release/blink-1 --chip STM32H745ZITx
 ```
 
-Microamp magic:
+### Dual core (merged HEX image)
 
-```
-cargo +nightly microamp --bin blink --release -v
-```
+Use the STM32CubeProgrammer utility provided by STM. Tool can be downloaded from their [website](https://www.st.com/en/development-tools/stm32cubeprog.html#get-software).
+
+
+
+### Known errors with flashing
 
 There is an error where project does not work after flashing, to fix it:
 
