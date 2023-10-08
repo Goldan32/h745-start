@@ -100,11 +100,11 @@ Use the STM32CubeProgrammer utility provided by STM. Tool can be downloaded from
 
 ### Known errors with flashing
 
-There is an error where project does not work after flashing, to fix it:
+~~There is an error where project does not work after flashing, to fix it:~~This issue was fixed in this commit.
 
-- From the `nucleo-h7xx` project use `cargo build --example blinky` and `cargo flash --chip STM32H745ZITx --example blinky`
-- Disconnect and reconnect board from power source
-- Flash `merge.hex` after using `make` to build this project
+### Known errors with the program
+
+Soft reset or even power reset does not reset shared variables.
 
 ## Debugging in VSCode
 

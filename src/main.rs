@@ -3,21 +3,33 @@
 
 use core::sync::atomic::{AtomicU8, Ordering};
 use cortex_m_rt::entry;
-use stm32h7xx_hal::{pac, prelude::*};
+use stm32h7xx_hal::{pac, prelude::*, time::*, rcc};
 use panic_halt as _;
 use microamp::shared;
 use core::fmt::Write;
 
+const PLL3_P: Hertz = Hertz::Hz(48_000 * 256);
+
 #[entry]
 fn main() -> ! {
-    let cp = cortex_m::Peripherals::take().unwrap();
+    let mut cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
 
     let pwr = dp.PWR.constrain();
-    let pwrcfg = pwr.freeze();
+    let pwrcfg = pwr.smps().vos0(&dp.SYSCFG).freeze();
 
+    // link SRAM3 power state to CPU1
+    dp.RCC.ahb2enr.modify(|_, w| w.sram3en().set_bit());
     let rcc = dp.RCC.constrain();
-    let ccdr = rcc.sys_ck(100.MHz()).freeze(pwrcfg, &dp.SYSCFG);
+    let ccdr = rcc.sys_ck(480.MHz()) // system clock @ 480 MHz
+              .pll1_strategy(rcc::PllConfigStrategy::Iterative) // pll1 drives system clock
+              .pll3_p_ck(PLL3_P) // sai clock @ 12.288 MHz
+             //.use_hse_crystal()                              // TODO hse oscillator @ 25 MHz
+              .freeze(pwrcfg, &dp.SYSCFG);
+
+    cp.SCB.invalidate_icache();
+    cp.SCB.enable_icache();
+    cp.DWT.enable_cycle_counter();
 
     let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
     let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
