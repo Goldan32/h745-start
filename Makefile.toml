@@ -1,0 +1,84 @@
+[env]
+ARTIFACT_DIR = "artifacts"
+HEX_FILE_0 = "${ARTIFACT_DIR}/image-0.hex"
+ELF_FILE_0 = "${ARTIFACT_DIR}/image-0.elf"
+BIN_FILE_0 = "${ARTIFACT_DIR}/image-0.bin"
+HEX_FILE_1 = "${ARTIFACT_DIR}/image-1.hex"
+ELF_FILE_1 = "${ARTIFACT_DIR}/image-1.elf"
+BIN_FILE_1 = "${ARTIFACT_DIR}/image-1.bin"
+ORIGINAL_ELF_0 = "target/thumbv7em-none-eabihf/release/blink-0"
+ORIGINAL_ELF_1 = "target/thumbv7em-none-eabihf/release/blink-1"
+MERGE_HEX = "${ARTIFACT_DIR}/merge.hex"
+
+[tasks.artifact-dir]
+command = "mkdir"
+args = ["-p", "${ARTIFACT_DIR}"]
+
+[tasks.elf0]
+command = "cp"
+args = ["${ORIGINAL_ELF_0}", "${ELF_FILE_0}"]
+dependencies = ["artifact-dir", "crate"]
+
+[tasks.elf1]
+command = "cp"
+args = ["${ORIGINAL_ELF_1}", "${ELF_FILE_1}"]
+dependencies = ["artifact-dir", "crate"]
+
+[tasks.hex0]
+command = "objcopy"
+args = ["-O", "ihex", "${ELF_FILE_0}", "${HEX_FILE_0}"]
+dependencies = ["elf0"]
+
+[tasks.hex1]
+command = "objcopy"
+args = ["-O", "ihex", "${ELF_FILE_1}", "${HEX_FILE_1}"]
+dependencies = ["elf1"]
+
+[tasks.bin0]
+command = "xxd"
+args = ["-r", "-p", "${HEX_FILE_0}", "${BIN_FILE_0}"]
+dependencies = ["hex0"]
+
+[tasks.bin1]
+command = "xxd"
+args = ["-r", "-p", "${HEX_FILE_1}", "${BIN_FILE_1}"]
+dependencies = ["hex1"]
+
+[tasks.merge]
+command = "srec_cat"
+args = [
+    "${HEX_FILE_0}", "-intel", 
+    "${HEX_FILE_1}", "-intel",
+    "-o", "${MERGE_HEX}", "-intel",
+    "-Line_Length", "44"
+]
+dependencies = ["hex0", "hex1"]
+
+[tasks.crate]
+clear = true
+command = "cargo"
+toolchain = "nightly"
+args = [
+    "microamp",
+    "--bin", "blink",
+    "--release", "-v"
+]
+
+[tasks.remove-artifacts]
+command = "rm"
+args = ["-rf", "${ARTIFACT_DIR}"]
+
+[tasks.cargo-clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean]
+clear = true
+dependencies = ["cargo-clean", "remove-artifacts"]
+
+[tasks.all]
+dependencies = ["merge"]
+
+[tasks.default]
+clear = true
+dependencies = ["all"]
