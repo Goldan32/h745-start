@@ -13,7 +13,6 @@ gdb-multiarch
 picocom
 openocd
 curl
-make
 stlink-tools
 binutils-multiarch
 xxd
@@ -32,13 +31,14 @@ rustup install nightly
 rustup +nightly target add thumbv7em-none-eabihf
 cargo install cargo-binutils --vers 0.3.6
 cargo install cargo-flash
+cargo install cargo-make
 cargo install microamp-tools --git https://github.com/rtfm-rs/microamp
 ```
 
 **4. Use the makefile from the project to build images**
 
 ```bash
-make
+cargo make
 ```
 
 After this step there are multiple outputs in the `artifacts` directory.
@@ -67,7 +67,7 @@ Press *Ctrl+Shift+P* and start typing `Dev Container: Reopen in Container` and s
 The container is built, use the shell in VSCode to build the project using the makefile.
 
 ```bash
-make
+cargo make
 ```
 
 ## Flash image to target
