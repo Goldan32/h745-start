@@ -20,9 +20,9 @@
                 "marus25.cortex-debug",
                 "vadimcn.vscode-lldb",
                 "yzhang.markdown-all-in-one",
-                "ms-python.python",
-                "ivory-lab.jenkinsfile-supp",
-                "ivory-lab.jenkinsfile-support"
+				"ms-azuretools.vscode-docker",
+				"ms-vscode-remote.remote-containers",
+				"ZixuanWang.linkerscript"
             ],
             "settings": {
                 "terminal.integrated.shell.linux": null
