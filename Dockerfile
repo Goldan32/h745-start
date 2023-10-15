@@ -36,4 +36,4 @@ RUN cargo install cargo-flash
 RUN cargo install microamp-tools --git https://github.com/rtfm-rs/microamp
 RUN cargo install cargo-make
 
-WORKDIR /work
+WORKDIR /workspace
