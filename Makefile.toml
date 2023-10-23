@@ -82,3 +82,29 @@ dependencies = ["merge"]
 [tasks.default]
 clear = true
 dependencies = ["all"]
+
+[tasks.deploy0]
+clear=true
+command = "cargo"
+args = [
+    "flash",
+    "--elf",
+    "${ELF_FILE_0}",
+    "--chip",
+    "STM32H745ZITx"
+]
+
+[tasks.deploy1]
+clear=true
+command = "cargo"
+args = [
+    "flash",
+    "--elf",
+    "${ELF_FILE_1}",
+    "--chip",
+    "STM32H745ZITx"
+]
+
+[tasks.deploy]
+clear = true
+dependencies = ["deploy0", "deploy1"]
