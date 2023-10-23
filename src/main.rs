@@ -16,7 +16,7 @@ use smoltcp;
 use smoltcp::iface::{
     Interface, InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage,
 };
-use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer, TcpSocket, TcpSocketBuffer};
 use smoltcp::storage::PacketMetadata;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
@@ -185,6 +185,18 @@ fn main() -> ! {
 
             let udp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(udp_socket) };
 
+            // - tcp socket -----------------------------------------------------------
+
+            let store = unsafe { &mut ETHERNET_STORAGE };
+            let tcp_rx_buffer = TcpSocketBuffer::new(&mut store.tcp_rx_buffer_storage[..]);
+            let tcp_tx_buffer = TcpSocketBuffer::new(&mut store.tcp_tx_buffer_storage[..]);
+            let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+
+            let mut tcp_recv_buffer = [0u8; 2048];
+            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 80);
+
+            let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
+
             // - timer ----------------------------------------------------------------
 
             systick_init(&mut cp.SYST, &ccdr.clocks); // 1ms tick
@@ -199,6 +211,28 @@ fn main() -> ! {
                 match lan8742a.poll_link() {
                     true => led_link.set_high(),
                     _ => led_link.set_low(),
+                }
+
+                let tcp_socket = unsafe {
+                    ETHERNET.as_mut().unwrap().interface
+                            .get_socket::<TcpSocket>(tcp_socket_handle)
+                };
+
+                log_serial!(tx, "Starting to listen\r\n");
+                tcp_socket.listen(tcp_endpoint).unwrap();
+                log_serial!(tx, "Finished listening\r\n");
+                if tcp_socket.may_recv() {
+                    log_serial!(tx, "We may receive\r\n");
+                    match tcp_socket.recv_slice(&mut tcp_recv_buffer) {
+                        Ok(len) if len > 0 => {
+                            log_serial!(tx, "Ok receiving\r\n");
+                            for c in tcp_recv_buffer {
+                                log_serial!(tx, "{}", c as char);
+                            }
+                        },
+                        Ok(_) => (),
+                        Err(_) => log_serial!(tx, "Error receiving\r\n")
+                    }
                 }
         
                 // send a packet
@@ -244,10 +278,10 @@ fn main() -> ! {
             loop {
                 log_serial!(tx, "Blinky main loop\r\n");
                 led_green.set_high();
-                delay.delay_ms(500_u16);
+                delay.delay_ms(5000_u16);
         
                 led_green.set_low();
-                delay.delay_ms(500_u16);
+                delay.delay_ms(5000_u16);
             }
         }
     }
@@ -285,30 +319,34 @@ fn SysTick() {
 // - NetStaticStorage ---------------------------------------------------------
 
 pub struct EthernetStorage<'a> {
-    ip_addrs: [IpCidr; 1],
+    ip_addrs: [IpCidr; 2],
     socket_storage: [SocketStorage<'a>; 8],
     neighbor_cache_storage: [Option<(IpAddress, Neighbor)>; 8],
-    routes_storage: [Option<(IpCidr, Route)>; 1],
+    routes_storage: [Option<(IpCidr, Route)>; 2],
 
     // network buffers
     udp_rx_metadata: [PacketMetadata<IpEndpoint>; 1],
     udp_tx_metadata: [PacketMetadata<IpEndpoint>; 1],
     udp_rx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
     udp_tx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
+    tcp_rx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
+    tcp_tx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
 }
 
 impl<'a> EthernetStorage<'a> {
     pub const fn new() -> Self {
         EthernetStorage {
-            ip_addrs: [IpCidr::Ipv6(Ipv6Cidr::SOLICITED_NODE_PREFIX)],
+            ip_addrs: [IpCidr::Ipv6(Ipv6Cidr::SOLICITED_NODE_PREFIX); 2],
             socket_storage: [SocketStorage::EMPTY; 8],
             neighbor_cache_storage: [None; 8],
-            routes_storage: [None; 1],
+            routes_storage: [None; 2],
 
             udp_rx_metadata: [UdpPacketMetadata::EMPTY],
             udp_tx_metadata: [UdpPacketMetadata::EMPTY],
             udp_rx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
             udp_tx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
+            tcp_rx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
+            tcp_tx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
         }
     }
 }
@@ -325,7 +363,7 @@ impl<'a> Net<'a> {
         ethdev: ethernet::EthernetDMA<'a, 4, 4>,
         ethernet_addr: EthernetAddress,
     ) -> Self {
-        store.ip_addrs = [IpCidr::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 0)];
+        store.ip_addrs = [IpCidr::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 0); 2];
 
         let neighbor_cache = NeighborCache::new(&mut store.neighbor_cache_storage[..]);
         let routes = Routes::new(&mut store.routes_storage[..]);
@@ -347,7 +385,7 @@ impl<'a> Net<'a> {
             Ok(_) => (),
             Err(smoltcp::Error::Exhausted) => (),
             Err(smoltcp::Error::Unrecognized) => (),
-            Err(e) => (),
+            Err(_) => (),
         };
     }
 }
