@@ -27,67 +27,102 @@ fn main() -> ! {
              //.use_hse_crystal()                              // TODO hse oscillator @ 25 MHz
               .freeze(pwrcfg, &dp.SYSCFG);
 
-    cp.SCB.invalidate_icache();
-    cp.SCB.enable_icache();
-    cp.DWT.enable_cycle_counter();
+    match () {
+        #[cfg(core = "0")]
+        () => {
+            cp.SCB.invalidate_icache();
+            cp.SCB.enable_icache();
+            cp.DWT.enable_cycle_counter();
 
-    let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
-    let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
-    let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
+            let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
+            let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
+            let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
-    // Configure PE1 as output.
-    let mut led = gpioe.pe1.into_push_pull_output();
-    let mut led2 = gpiob.pb0.into_push_pull_output();
+            // Configure PE1 as output.
+            let mut led = gpioe.pe1.into_push_pull_output();
+            let mut led2 = gpiob.pb0.into_push_pull_output();
 
-    let tx = gpiod.pd8.into_alternate();
-    let rx = gpiod.pd9.into_alternate();
+            let tx = gpiod.pd8.into_alternate();
+            let rx = gpiod.pd9.into_alternate();
 
-    let serial = dp
-        .USART3
-        .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
-        .unwrap();
+            let serial = dp
+                .USART3
+                .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+                .unwrap();
 
-    let (mut tx, mut rx) = serial.split();
+            let (mut tx, mut rx) = serial.split();
 
-    // Get the delay provider.
-    let mut delay = cp.SYST.delay(ccdr.clocks);
+            // Get the delay provider.
+            let mut delay = cp.SYST.delay(ccdr.clocks);
+            const CORE0: u8 = 0;
+            const CORE1: u8 = 1;
+            const LOCKED: u8 = 2;
 
-    //let core_based_num = if cfg!(core = "0") {250_u16} else {1000_u16};
+            #[shared]
+            static mut SHARED: u32 = 0;
 
-    const CORE0: u8 = 0;
-    const CORE1: u8 = 1;
-    const LOCKED: u8 = 2;
+            #[shared]
+            static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
 
-    #[shared]
-    static mut SHARED: u32 = 0;
+            let mut delay_time = 500_u16;
 
-    #[shared]
-    static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
-
-    let mut delay_time = 500_u16;
-
-    let (our_turn, next_core) = if cfg!(core = "0") {
-        (CORE0, CORE1)
-    } else {
-        (CORE1, CORE0)
-    };
-
-    loop {
-        match () {
-            #[cfg(core = "0")]
-            () => {
-                writeln!(tx, "Hello World!\r\n").unwrap();
-                // Busy wait for semaphore
+            let (our_turn, next_core) = if cfg!(core = "0") {
+                (CORE0, CORE1)
+            } else {
+                (CORE1, CORE0)
+            };
+            loop {
+                write!(tx, "Hello World!\r\n").unwrap();
                 unsafe {if SHARED > 5 {delay_time = 1000_u16}}
                 led.set_high();
                 delay.delay_ms(delay_time);
-        
+
                 led.set_low();
                 delay.delay_ms(delay_time);
             }
-            #[cfg(not(core = "0"))]
-            () => {
-                // Busy wait for semaphore
+        }
+        #[cfg(not(core = "0"))]
+        () => {
+            let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
+            let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
+            let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
+
+            // Configure PE1 as output.
+            let mut led = gpioe.pe1.into_push_pull_output();
+            let mut led2 = gpiob.pb0.into_push_pull_output();
+
+            let tx = gpiod.pd8.into_alternate();
+            let rx = gpiod.pd9.into_alternate();
+
+            let serial = dp
+                .USART3
+                .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+                .unwrap();
+
+            let (mut tx, mut rx) = serial.split();
+
+            // Get the delay provider.
+            let mut delay = cp.SYST.delay(ccdr.clocks);
+            const CORE0: u8 = 0;
+            const CORE1: u8 = 1;
+            const LOCKED: u8 = 2;
+
+            #[shared]
+            static mut SHARED: u32 = 0;
+
+            #[shared]
+            static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
+
+            let mut delay_time = 500_u16;
+
+            let (our_turn, next_core) = if cfg!(core = "0") {
+                (CORE0, CORE1)
+            } else {
+                (CORE1, CORE0)
+            };
+
+            loop {
+                write!(tx, "Hello World 2!\r\n").unwrap();
                 unsafe {SHARED += 1;}
                 led2.set_high();
                 delay.delay_ms(500_u16);
@@ -96,7 +131,6 @@ fn main() -> ! {
                 delay.delay_ms(500_u16);
             }
         }
-
     }
 
 }
