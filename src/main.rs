@@ -8,6 +8,12 @@ use panic_halt as _;
 use microamp::shared;
 use core::fmt::Write;
 
+macro_rules! log_serial {
+    ($tx: expr, $($arg:tt)*) => {{
+        write!($tx, $($arg)*).unwrap()
+    }};
+}
+
 const PLL3_P: Hertz = Hertz::Hz(48_000 * 256);
 
 #[entry]
@@ -74,7 +80,7 @@ fn main() -> ! {
                 (CORE1, CORE0)
             };
             loop {
-                write!(tx, "Hello World!\r\n").unwrap();
+                log_serial!(tx, "Hello World delay is {}!\r\n", delay_time);
                 unsafe {if SHARED > 5 {delay_time = 1000_u16}}
                 led_red.set_high();
                 delay.delay_ms(delay_time);
@@ -124,7 +130,7 @@ fn main() -> ! {
             };
 
             loop {
-                write!(tx, "Hello World 2!\r\n").unwrap();
+                log_serial!(tx, "Hello World 2 delay is {}!\r\n", delay_time);
                 unsafe {SHARED += 1;}
                 led_green.set_high();
                 delay.delay_ms(500_u16);
