@@ -8,7 +8,14 @@ cortex-m = "0.7.7"
 cortex-m-rt = "0.7.3"
 microamp = "0.1.0-alpha.7"
 panic-halt = "0.2.0"
-stm32h7xx-hal = {version = "0.14.0", features = ["stm32h747cm7"]}
+stm32h7xx-hal = {version = "0.13.0", features = ["stm32h747cm7", "ethernet"]}
+smoltcp = { version = "0.8.1", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-ipv6",
+    "socket-raw",
+    "socket-udp"
+]}
 
 # - profiles ------------------------------------------------------------------
 [profile.dev]
