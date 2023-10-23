@@ -15,7 +15,7 @@
         "vscode": {
             "extensions": [
                 "tamasfe.even-better-toml",
-                "matklad.rust-analyzer",
+                "rust-lang.rust-analyzer",
                 "serayuzgur.crates",
                 "marus25.cortex-debug",
                 "vadimcn.vscode-lldb",
