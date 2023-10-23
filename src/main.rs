@@ -61,6 +61,8 @@ fn main() -> ! {
             #[shared]
             static mut SHARED: u32 = 0;
 
+            unsafe {SHARED = 0;}
+
             #[shared]
             static SEMAPHORE: AtomicU8 = AtomicU8::new(CORE0);
 
