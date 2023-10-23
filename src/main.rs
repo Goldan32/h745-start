@@ -38,9 +38,9 @@ fn main() -> ! {
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
             let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
-            // Configure PE1 as output.
-            let mut led = gpioe.pe1.into_push_pull_output();
-            let mut led2 = gpiob.pb0.into_push_pull_output();
+            let mut led_yellow = gpioe.pe1.into_push_pull_output();
+            let mut led_green = gpiob.pb0.into_push_pull_output();
+            let mut led_red = gpiob.pb14.into_push_pull_output();
 
             let tx = gpiod.pd8.into_alternate();
             let rx = gpiod.pd9.into_alternate();
@@ -74,10 +74,10 @@ fn main() -> ! {
             loop {
                 write!(tx, "Hello World!\r\n").unwrap();
                 unsafe {if SHARED > 5 {delay_time = 1000_u16}}
-                led.set_high();
+                led_red.set_high();
                 delay.delay_ms(delay_time);
 
-                led.set_low();
+                led_red.set_low();
                 delay.delay_ms(delay_time);
             }
         }
@@ -87,9 +87,9 @@ fn main() -> ! {
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
             let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
-            // Configure PE1 as output.
-            let mut led = gpioe.pe1.into_push_pull_output();
-            let mut led2 = gpiob.pb0.into_push_pull_output();
+            let mut led_yellow = gpioe.pe1.into_push_pull_output();
+            let mut led_green = gpiob.pb0.into_push_pull_output();
+            let mut led_red = gpiob.pb14.into_push_pull_output();
 
             let tx = gpiod.pd8.into_alternate();
             let rx = gpiod.pd9.into_alternate();
@@ -124,10 +124,10 @@ fn main() -> ! {
             loop {
                 write!(tx, "Hello World 2!\r\n").unwrap();
                 unsafe {SHARED += 1;}
-                led2.set_high();
+                led_green.set_high();
                 delay.delay_ms(500_u16);
         
-                led2.set_low();
+                led_green.set_low();
                 delay.delay_ms(500_u16);
             }
         }
