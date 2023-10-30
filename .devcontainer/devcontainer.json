@@ -40,6 +40,7 @@
 	"runArgs": [ 
 		"--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined", // vscode defaults 
 		"--privileged", // So our container can follow sybolic links to the actuall target device on the host.
+		"--network", "host"
 	],
 
 	// This command creates a backround process to iterface to the actuall board.
@@ -56,6 +57,9 @@
 	// Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
 	//"remoteUser": "rustacean",
 
-	"mounts": ["source=/dev,target=/dev,type=bind"] // Actually allows the target device to be accessed 
+	"mounts": [
+		"source=/dev,target=/dev,type=bind",
+		"source=${localEnv:HOME}/.ssh,target=/home/rustacean/.ssh,type=bind,consistency=cached"
+	] // Actually allows the target device to be accessed 
 													// within the container.
 }
