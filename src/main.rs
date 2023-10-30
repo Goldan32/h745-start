@@ -193,7 +193,7 @@ fn main() -> ! {
             let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
             let mut tcp_recv_buffer = [0u8; 2048];
-            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 80);
+            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 6970);
 
             let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
 
@@ -204,8 +204,9 @@ fn main() -> ! {
 
             led_user.set_low();
 
-            // - main loop ------------------------------------------------------------
+            let mut tcp_active: bool = false;
 
+            // - main loop ------------------------------------------------------------
             loop {
                 log_serial!(tx, "Ethernet main loop\r\n");
                 match lan8742a.poll_link() {
@@ -219,20 +220,31 @@ fn main() -> ! {
                 };
 
                 log_serial!(tx, "Starting to listen\r\n");
-                tcp_socket.listen(tcp_endpoint).unwrap();
+                if !tcp_socket.is_open() {
+                    log_serial!(tx, "Socket was not open\r\n");
+                    tcp_socket.listen(6970).unwrap();
+                }
                 log_serial!(tx, "Finished listening\r\n");
+
+                if tcp_socket.is_active() && !tcp_active {
+                    log_serial!(tx, "tcp connected\r\n");
+                } else if tcp_socket.is_active() && tcp_active {
+                    log_serial!(tx, "tcp disconnected\r\n");
+                }
+                tcp_active = tcp_socket.is_active();
+
                 if tcp_socket.may_recv() {
-                    log_serial!(tx, "We may receive\r\n");
-                    match tcp_socket.recv_slice(&mut tcp_recv_buffer) {
-                        Ok(len) if len > 0 => {
-                            log_serial!(tx, "Ok receiving\r\n");
-                            for c in tcp_recv_buffer {
-                                log_serial!(tx, "{}", c as char);
+                    tcp_socket.recv(|buffer| {
+                        if !buffer.is_empty() {
+                            log_serial!(tx, "Recieved {} octets\r\n", buffer.len());
+                            for c in &mut *buffer {
+                                log_serial!(tx, "{}", *c as char);
                             }
-                        },
-                        Ok(_) => (),
-                        Err(_) => log_serial!(tx, "Error receiving\r\n")
-                    }
+                        }
+                        (buffer.len(), ())
+                    }).unwrap();
+                } else if tcp_socket.may_send() {
+                    tcp_socket.close();
                 }
         
                 // send a packet
