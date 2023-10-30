@@ -197,6 +197,21 @@ fn main() -> ! {
 
             let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
 
+            let hello_world_u = "HTTP/1.1 200 OK
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hello, World!</title>
+</head>
+<body>
+    <h1>Hello, World!</h1>
+</body>
+</html>";
+
+let hello_world = hello_world_u.as_bytes();
+
             // - timer ----------------------------------------------------------------
 
             systick_init(&mut cp.SYST, &ccdr.clocks); // 1ms tick
@@ -243,7 +258,16 @@ fn main() -> ! {
                         }
                         (buffer.len(), ())
                     }).unwrap();
-                } else if tcp_socket.may_send() {
+                }
+
+                if tcp_socket.may_send() {
+                    log_serial!(tx, "May send tcp\r\n");
+                    tcp_socket.send(|hello_world| {
+                        if !hello_world.is_empty() {
+                            log_serial!(tx, "TCP sending {} octets\r\n", hello_world.len());
+                        }
+                        (hello_world.len(), ())
+                    }).unwrap();
                     tcp_socket.close();
                 }
         
