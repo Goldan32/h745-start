@@ -21,9 +21,16 @@ use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
 
+
+// - logging ------------------------------------------------------------------
+
+const LOG_LEVEL: u32 = 1;
+
 macro_rules! log_serial {
     ($tx: expr, $($arg:tt)*) => {{
-        write!($tx, $($arg)*).unwrap()
+        if LOG_LEVEL > 0 {
+            write!($tx, $($arg)*).unwrap();
+        }
     }};
 }
 
