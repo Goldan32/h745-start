@@ -16,12 +16,10 @@ use smoltcp;
 use smoltcp::iface::{
     Interface, InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage,
 };
-use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer, TcpSocket, TcpSocketBuffer};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::storage::PacketMetadata;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
-
-// Start udp server: nc -u -l 34254
 
 macro_rules! log_serial {
     ($tx: expr, $($arg:tt)*) => {{
@@ -34,9 +32,8 @@ macro_rules! log_serial {
 const PLL3_P: Hertz = Hertz::Hz(48_000 * 256);
 const MAC_LOCAL: [u8; 6] = [0x02, 0x00, 0x11, 0x22, 0x33, 0x44];
 const IP_LOCAL: [u8; 4] = [192, 168, 0, 139];
-const IP_REMOTE: [u8; 4] = [192, 168, 0, 65];
-const IP_REMOTE_PORT: u16 = 34254;
-const MAX_UDP_PACKET_SIZE: usize = 576;
+const MAX_PACKET_SIZE: usize = 576;
+const LOCAL_PORT: u16 = 6970;
 
 // - global static state ------------------------------------------------------
 
@@ -84,11 +81,11 @@ fn main() -> ! {
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
             let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
 
-            let mut led_user = gpiob.pb14.into_push_pull_output(); // LED3, red
-            let mut led_link = gpioe.pe1.into_push_pull_output(); // LED2, yellow
-            let mut led_green = gpiob.pb0.into_push_pull_output(); // LED1, green
-            led_user.set_high();
-            led_link.set_low();
+            let mut led_red = gpiob.pb14.into_push_pull_output();
+            let mut led_yellow = gpioe.pe1.into_push_pull_output();
+            let mut led_green = gpiob.pb0.into_push_pull_output();
+            led_red.set_high();
+            led_yellow.set_low();
 
             // - uart -----------------------------------------------------------------
 
@@ -144,14 +141,13 @@ fn main() -> ! {
             let mut lan8742a = ethernet::phy::LAN8742A::new(eth_mac.set_phy_addr(0));
 
             // initialise PHY and wait for link to come up
-
             lan8742a.phy_reset();
             lan8742a.phy_init();
             log_serial!(tx, "Waiting for connection\r\n");
             while !lan8742a.poll_link() {}
             log_serial!(tx, "Connection established\r\n");
 
-             // enable ethernet interrupt
+            // enable ethernet interrupt
             unsafe {
                 ethernet::enable_interrupt();
                 cp.NVIC.set_priority(pac::Interrupt::ETH, 196); // mid prio
@@ -163,28 +159,6 @@ fn main() -> ! {
                 ETHERNET = Some(Net::new(&mut ETHERNET_STORAGE, eth_dma, mac_addr));
             }
 
-            // - udp socket -----------------------------------------------------------
-
-            let store = unsafe { &mut ETHERNET_STORAGE };
-            let udp_rx_buffer = UdpSocketBuffer::new(
-                &mut store.udp_rx_metadata[..],
-                &mut store.udp_rx_buffer_storage[..],
-            );
-            let udp_tx_buffer = UdpSocketBuffer::new(
-                &mut store.udp_tx_metadata[..],
-                &mut store.udp_tx_buffer_storage[..],
-            );
-            let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
-
-            let endpoint_local = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 12345);
-            let endpoint_remote =
-                IpEndpoint::new(Ipv4Address::from_bytes(&IP_REMOTE).into(), IP_REMOTE_PORT);
-            if !udp_socket.is_open() {
-                udp_socket.bind(endpoint_local).unwrap();
-            }
-
-            let udp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(udp_socket) };
-
             // - tcp socket -----------------------------------------------------------
 
             let store = unsafe { &mut ETHERNET_STORAGE };
@@ -193,7 +167,7 @@ fn main() -> ! {
             let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
             let mut tcp_recv_buffer = [0u8; 2048];
-            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 6970);
+            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), LOCAL_PORT);
 
             let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
 
@@ -215,7 +189,7 @@ Content-Type: text/html
             systick_init(&mut cp.SYST, &ccdr.clocks); // 1ms tick
             let mut delay = cp.SYST.delay(ccdr.clocks);
 
-            led_user.set_low();
+            led_red.set_low();
 
             let mut tcp_active: bool = false;
 
@@ -223,8 +197,8 @@ Content-Type: text/html
             loop {
                 log_serial!(tx, "Ethernet main loop\r\n");
                 match lan8742a.poll_link() {
-                    true => led_link.set_high(),
-                    _ => led_link.set_low(),
+                    true => led_yellow.set_high(),
+                    _ => led_yellow.set_low(),
                 }
 
                 let tcp_socket = unsafe {
@@ -235,7 +209,7 @@ Content-Type: text/html
                 log_serial!(tx, "Starting to listen\r\n");
                 if !tcp_socket.is_open() {
                     log_serial!(tx, "Socket was not open\r\n");
-                    tcp_socket.listen(6970).unwrap();
+                    tcp_socket.listen(LOCAL_PORT).unwrap();
                 }
                 log_serial!(tx, "Finished listening\r\n");
 
@@ -266,22 +240,8 @@ Content-Type: text/html
                     tcp_socket.send_slice(&hello_world[..]).unwrap();
                     tcp_socket.close();
                 }
-        
-                // send a packet
-                let udp_socket = unsafe {
-                    ETHERNET
-                        .as_mut()
-                        .unwrap()
-                        .interface
-                        .get_socket::<UdpSocket>(udp_socket_handle)
-                };
-                match udp_socket.send_slice("hello there\n".as_bytes(), endpoint_remote) {
-                    Ok(()) => log_serial!(tx, "Success sending packet\r\n"),
-                    Err(e) => log_serial!(tx, "Error sending packet\r\n"),
-                }
-        
+
                 delay.delay_ms(2000_u16);
-            
             }
         }
         #[cfg(not(core = "0"))]
@@ -351,34 +311,26 @@ fn SysTick() {
 // - NetStaticStorage ---------------------------------------------------------
 
 pub struct EthernetStorage<'a> {
-    ip_addrs: [IpCidr; 2],
+    ip_addrs: [IpCidr; 1],
     socket_storage: [SocketStorage<'a>; 8],
     neighbor_cache_storage: [Option<(IpAddress, Neighbor)>; 8],
-    routes_storage: [Option<(IpCidr, Route)>; 2],
+    routes_storage: [Option<(IpCidr, Route)>; 1],
 
     // network buffers
-    udp_rx_metadata: [PacketMetadata<IpEndpoint>; 1],
-    udp_tx_metadata: [PacketMetadata<IpEndpoint>; 1],
-    udp_rx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
-    udp_tx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
-    tcp_rx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
-    tcp_tx_buffer_storage: [u8; MAX_UDP_PACKET_SIZE],
+    tcp_rx_buffer_storage: [u8; MAX_PACKET_SIZE],
+    tcp_tx_buffer_storage: [u8; MAX_PACKET_SIZE],
 }
 
 impl<'a> EthernetStorage<'a> {
     pub const fn new() -> Self {
         EthernetStorage {
-            ip_addrs: [IpCidr::Ipv6(Ipv6Cidr::SOLICITED_NODE_PREFIX); 2],
+            ip_addrs: [IpCidr::Ipv6(Ipv6Cidr::SOLICITED_NODE_PREFIX)],
             socket_storage: [SocketStorage::EMPTY; 8],
             neighbor_cache_storage: [None; 8],
-            routes_storage: [None; 2],
+            routes_storage: [None; 1],
 
-            udp_rx_metadata: [UdpPacketMetadata::EMPTY],
-            udp_tx_metadata: [UdpPacketMetadata::EMPTY],
-            udp_rx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
-            udp_tx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
-            tcp_rx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
-            tcp_tx_buffer_storage: [0u8; MAX_UDP_PACKET_SIZE],
+            tcp_rx_buffer_storage: [0u8; MAX_PACKET_SIZE],
+            tcp_tx_buffer_storage: [0u8; MAX_PACKET_SIZE],
         }
     }
 }
@@ -395,7 +347,7 @@ impl<'a> Net<'a> {
         ethdev: ethernet::EthernetDMA<'a, 4, 4>,
         ethernet_addr: EthernetAddress,
     ) -> Self {
-        store.ip_addrs = [IpCidr::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 0); 2];
+        store.ip_addrs = [IpCidr::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), 0)];
 
         let neighbor_cache = NeighborCache::new(&mut store.neighbor_cache_storage[..]);
         let routes = Routes::new(&mut store.routes_storage[..]);
