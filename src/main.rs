@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![allow(unused_imports)]
 
 use stm32h7xx_hal as hal;
 use panic_halt as _;
@@ -17,7 +18,6 @@ use smoltcp::iface::{
     Interface, InterfaceBuilder, Neighbor, NeighborCache, Route, Routes, SocketStorage,
 };
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-use smoltcp::storage::PacketMetadata;
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
 
@@ -30,18 +30,26 @@ macro_rules! log_serial {
 // - global constants ---------------------------------------------------------
 
 const PLL3_P: Hertz = Hertz::Hz(48_000 * 256);
+
+#[cfg(core = "0")]
 const MAC_LOCAL: [u8; 6] = [0x02, 0x00, 0x11, 0x22, 0x33, 0x44];
+#[cfg(core = "0")]
 const IP_LOCAL: [u8; 4] = [192, 168, 0, 139];
+#[cfg(core = "0")]
 const MAX_PACKET_SIZE: usize = 576;
+#[cfg(core = "0")]
 const LOCAL_PORT: u16 = 6970;
 
 // - global static state ------------------------------------------------------
-
+#[cfg(core = "0")]
 static ATOMIC_TIME: AtomicU32 = AtomicU32::new(0);
 
+#[cfg(core = "0")]
 static mut ETHERNET: Option<Net> = None;
+#[cfg(core = "0")]
 static mut ETHERNET_STORAGE: EthernetStorage = EthernetStorage::new();
 
+#[cfg(core = "0")]
 #[link_section = ".sram3.eth"]
 static mut ETHERNET_DESCRIPTOR_RING: ethernet::DesRing<4, 4> = ethernet::DesRing::new();
 
@@ -49,7 +57,7 @@ static mut ETHERNET_DESCRIPTOR_RING: ethernet::DesRing<4, 4> = ethernet::DesRing
 
 #[entry]
 fn main() -> ! {
-    let mut cp = cortex_m::Peripherals::take().unwrap();
+    let mut _cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
 
     // - power & clocks -------------------------------------------------------
@@ -72,9 +80,9 @@ fn main() -> ! {
     match () {
         #[cfg(core = "0")]
         () => {
-            cp.SCB.invalidate_icache();
-            cp.SCB.enable_icache();
-            cp.DWT.enable_cycle_counter();
+            _cp.SCB.invalidate_icache();
+            _cp.SCB.enable_icache();
+            _cp.DWT.enable_cycle_counter();
 
             // - leds -----------------------------------------------------------------
 
@@ -83,7 +91,7 @@ fn main() -> ! {
 
             let mut led_red = gpiob.pb14.into_push_pull_output();
             let mut led_yellow = gpioe.pe1.into_push_pull_output();
-            let mut led_green = gpiob.pb0.into_push_pull_output();
+            let mut _led_green = gpiob.pb0.into_push_pull_output();
             led_red.set_high();
             led_yellow.set_low();
 
@@ -91,12 +99,12 @@ fn main() -> ! {
 
             let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
             let tx = gpiod.pd8.into_alternate();
-            let rx = gpiod.pd9.into_alternate();
+            let _rx = gpiod.pd9.into_alternate();
             let serial = dp
                 .USART3
-                .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+                .serial((tx, _rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
                 .unwrap();
-            let (mut tx, mut rx) = serial.split();
+            let (mut tx, _rx) = serial.split();
 
             // - ethernet -------------------------------------------------------------
 
@@ -150,7 +158,7 @@ fn main() -> ! {
             // enable ethernet interrupt
             unsafe {
                 ethernet::enable_interrupt();
-                cp.NVIC.set_priority(pac::Interrupt::ETH, 196); // mid prio
+                _cp.NVIC.set_priority(pac::Interrupt::ETH, 196); // mid prio
                 cortex_m::peripheral::NVIC::unmask(pac::Interrupt::ETH);
             }
 
@@ -164,14 +172,10 @@ fn main() -> ! {
             let store = unsafe { &mut ETHERNET_STORAGE };
             let tcp_rx_buffer = TcpSocketBuffer::new(&mut store.tcp_rx_buffer_storage[..]);
             let tcp_tx_buffer = TcpSocketBuffer::new(&mut store.tcp_tx_buffer_storage[..]);
-            let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
-
-            let mut tcp_recv_buffer = [0u8; 2048];
-            let tcp_endpoint = IpEndpoint::new(Ipv4Address::from_bytes(&IP_LOCAL).into(), LOCAL_PORT);
-
+            let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
             let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
 
-            let mut hello_world = "HTTP/1.1 200 OK
+            let hello_world = "HTTP/1.1 200 OK
 Content-Type: text/html
 
 <!DOCTYPE html>
@@ -186,8 +190,8 @@ Content-Type: text/html
 
             // - timer ----------------------------------------------------------------
 
-            systick_init(&mut cp.SYST, &ccdr.clocks); // 1ms tick
-            let mut delay = cp.SYST.delay(ccdr.clocks);
+            systick_init(&mut _cp.SYST, &ccdr.clocks); // 1ms tick
+            let mut delay = _cp.SYST.delay(ccdr.clocks);
 
             led_red.set_low();
 
@@ -250,22 +254,22 @@ Content-Type: text/html
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
             let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
 
-            let mut led_yellow = gpioe.pe1.into_push_pull_output();
+            let mut _led_yellow = gpioe.pe1.into_push_pull_output();
             let mut led_green = gpiob.pb0.into_push_pull_output();
-            let mut led_red = gpiob.pb14.into_push_pull_output();
+            let mut _led_red = gpiob.pb14.into_push_pull_output();
 
             let tx = gpiod.pd8.into_alternate();
-            let rx = gpiod.pd9.into_alternate();
+            let _rx = gpiod.pd9.into_alternate();
 
             let serial = dp
                 .USART3
-                .serial((tx, rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+                .serial((tx, _rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
                 .unwrap();
 
-            let (mut tx, mut rx) = serial.split();
+            let (mut tx, _rx) = serial.split();
 
             // Get the delay provider.
-            let mut delay = cp.SYST.delay(ccdr.clocks);
+            let mut delay = _cp.SYST.delay(ccdr.clocks);
 
             loop {
                 log_serial!(tx, "Blinky main loop\r\n");
@@ -282,6 +286,7 @@ Content-Type: text/html
 
 // - systick ------------------------------------------------------------------
 
+#[cfg(core = "0")]
 fn systick_init(syst: &mut pac::SYST, clocks: &CoreClocks) {
     let c_ck_mhz = clocks.c_ck().raw() / 1_000_000;
     let syst_calib = 0x3E8;
@@ -293,6 +298,7 @@ fn systick_init(syst: &mut pac::SYST, clocks: &CoreClocks) {
 
 // - interrupts and exceptions ------------------------------------------------
 
+#[cfg(core = "0")]
 #[interrupt]
 fn ETH() {
     unsafe { ethernet::interrupt_handler() };
@@ -303,6 +309,7 @@ fn ETH() {
     }
 }
 
+#[cfg(core = "0")]
 #[exception]
 fn SysTick() {
     ATOMIC_TIME.fetch_add(1, Ordering::Relaxed);
@@ -310,6 +317,7 @@ fn SysTick() {
 
 // - NetStaticStorage ---------------------------------------------------------
 
+#[cfg(core = "0")]
 pub struct EthernetStorage<'a> {
     ip_addrs: [IpCidr; 1],
     socket_storage: [SocketStorage<'a>; 8],
@@ -321,6 +329,7 @@ pub struct EthernetStorage<'a> {
     tcp_tx_buffer_storage: [u8; MAX_PACKET_SIZE],
 }
 
+#[cfg(core = "0")]
 impl<'a> EthernetStorage<'a> {
     pub const fn new() -> Self {
         EthernetStorage {
@@ -337,10 +346,12 @@ impl<'a> EthernetStorage<'a> {
 
 // - Net ----------------------------------------------------------------------
 
+#[cfg(core = "0")]
 pub struct Net<'a> {
     interface: Interface<'a, ethernet::EthernetDMA<'a, 4, 4>>,
 }
 
+#[cfg(core = "0")]
 impl<'a> Net<'a> {
     pub fn new(
         store: &'static mut EthernetStorage<'a>,
