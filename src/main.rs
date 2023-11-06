@@ -20,7 +20,7 @@ use smoltcp::iface::{
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
-
+use httparse;
 
 // - logging ------------------------------------------------------------------
 
@@ -179,8 +179,7 @@ fn main() -> ! {
             let store = unsafe { &mut ETHERNET_STORAGE };
             let tcp_rx_buffer = TcpSocketBuffer::new(&mut store.tcp_rx_buffer_storage[..]);
             let tcp_tx_buffer = TcpSocketBuffer::new(&mut store.tcp_tx_buffer_storage[..]);
-            let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
-            let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(tcp_socket) };
+            let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer)) };
 
             let hello_world = "HTTP/1.1 200 OK
 Content-Type: text/html
@@ -203,6 +202,8 @@ Content-Type: text/html
             led_red.set_low();
 
             let mut tcp_active: bool = false;
+            let mut tpb: [u8; 2048] = [0; 2048];
+            let mut tpb2: [u8; 2048] = [0; 2048];
 
             // - main loop ------------------------------------------------------------
             loop {
@@ -232,22 +233,31 @@ Content-Type: text/html
                 tcp_active = tcp_socket.is_active();
 
                 if tcp_socket.may_recv() {
-                    tcp_socket.recv(|buffer| {
-                        if !buffer.is_empty() {
-                            log_serial!(tx, "Recieved {} octets\r\n", buffer.len());
-                            for c in &mut *buffer {
-                                log_serial!(tx, "{}", *c as char);
-                            }
+                    let mut headers = [httparse::EMPTY_HEADER; 16];
+                    let mut req = httparse::Request::new(&mut headers);
+                    let mut data_len = 0;
+                    let data = tcp_socket.recv(|buffer| {
+                        log_serial!(tx, "buffer len is {}\r\n", buffer.len());
+                        let mut data = [0u8; 576];
+                        data_len = buffer.len();
+                        for i in 0..buffer.len() {
+                            data[i] = buffer[i];
                         }
-                        (buffer.len(), ())
+                        log_serial!(tx, "copy from slice OK\r\n");
+                        (buffer.len(), data)
                     }).unwrap();
+
+                    if data_len > 0 {
+                        for c in data {
+                            log_serial!(tx, "{}", c as char);
+                        }
+                        let res = req.parse(&data).unwrap();
+                        log_serial!(tx, "Method was: {}\r\n", req.method.unwrap());
+                    }
                 }
 
                 if tcp_socket.may_send() {
                     log_serial!(tx, "May send tcp\r\n");
-                    for c in hello_world {
-                        log_serial!(tx, "{}", *c);
-                    }
                     tcp_socket.send_slice(&hello_world[..]).unwrap();
                     tcp_socket.close();
                 }
