@@ -202,8 +202,6 @@ Content-Type: text/html
             led_red.set_low();
 
             let mut tcp_active: bool = false;
-            let mut tpb: [u8; 2048] = [0; 2048];
-            let mut tpb2: [u8; 2048] = [0; 2048];
 
             // - main loop ------------------------------------------------------------
             loop {
@@ -251,15 +249,26 @@ Content-Type: text/html
                         for c in data {
                             log_serial!(tx, "{}", c as char);
                         }
-                        let res = req.parse(&data).unwrap();
+                        // Call function here
+                        let _res = req.parse(&data).unwrap();
                         log_serial!(tx, "Method was: {}\r\n", req.method.unwrap());
+                        match req.method.unwrap() {
+                            "GET" => {
+                                log_serial!(tx, "In GET arm\r\n");
+                                if tcp_socket.may_send() {
+                                    log_serial!(tx, "May send tcp\r\n");
+                                    tcp_socket.send_slice(&hello_world[..]).unwrap();
+                                    tcp_socket.close();
+                                }
+                            }
+                            "POST" => {
+                                log_serial!(tx, "In POST arm\r\n");
+                            }
+                            _ => {
+                                log_serial!(tx, "In ERROR arm\r\n");
+                            }
+                        }
                     }
-                }
-
-                if tcp_socket.may_send() {
-                    log_serial!(tx, "May send tcp\r\n");
-                    tcp_socket.send_slice(&hello_world[..]).unwrap();
-                    tcp_socket.close();
                 }
 
                 delay.delay_ms(2000_u16);
