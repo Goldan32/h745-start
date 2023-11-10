@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use core::fmt::Write;
 use cortex_m;
 use cortex_m_rt::{entry, exception};
-use hal::{pac, prelude::*, time::*, rcc};
+use hal::{pac, prelude::*, time::*, rcc, adc, rcc::rec::AdcClkSel, traits::DacOut};
 use hal::rcc::CoreClocks;
 use hal::{ethernet, ethernet::PHY};
 use pac::interrupt;
@@ -75,7 +75,7 @@ fn main() -> ! {
     // link SRAM3 power state to CPU1
     dp.RCC.ahb2enr.modify(|_, w| w.sram3en().set_bit());
     let rcc = dp.RCC.constrain();
-    let ccdr = rcc
+    let mut ccdr = rcc
         .sys_ck(200.MHz()) // system clock
         .pll1_strategy(rcc::PllConfigStrategy::Iterative) // pll1 drives system clock
         .pll3_p_ck(PLL3_P) // sai clock @ 12.288 MHz
@@ -83,6 +83,9 @@ fn main() -> ! {
         .pll1_r_ck(100.MHz())
       //.use_hse_crystal()                              // TODO hse oscillator @ 25 MHz
         .freeze(pwrcfg, &dp.SYSCFG);
+
+    // Switch adc_ker_ck_input multiplexer to per_ck
+    ccdr.peripheral.kernel_adc_clk_mux(AdcClkSel::Per);
 
     match () {
         #[cfg(core = "0")]
@@ -158,9 +161,7 @@ fn main() -> ! {
             // initialise PHY and wait for link to come up
             lan8742a.phy_reset();
             lan8742a.phy_init();
-            log_serial!(tx, "Waiting for connection\r\n");
             while !lan8742a.poll_link() {}
-            log_serial!(tx, "Connection established\r\n");
 
             // enable ethernet interrupt
             unsafe {
@@ -205,7 +206,7 @@ Content-Type: text/html
 
             // - main loop ------------------------------------------------------------
             loop {
-                log_serial!(tx, "Ethernet main loop\r\n");
+                log_serial!(tx, "Core 0 main loop\r\n");
                 match lan8742a.poll_link() {
                     true => led_yellow.set_high(),
                     _ => led_yellow.set_low(),
@@ -216,18 +217,10 @@ Content-Type: text/html
                             .get_socket::<TcpSocket>(tcp_socket_handle)
                 };
 
-                log_serial!(tx, "Starting to listen\r\n");
                 if !tcp_socket.is_open() {
-                    log_serial!(tx, "Socket was not open\r\n");
                     tcp_socket.listen(LOCAL_PORT).unwrap();
                 }
-                log_serial!(tx, "Finished listening\r\n");
 
-                if tcp_socket.is_active() && !tcp_active {
-                    log_serial!(tx, "tcp connected\r\n");
-                } else if tcp_socket.is_active() && tcp_active {
-                    log_serial!(tx, "tcp disconnected\r\n");
-                }
                 tcp_active = tcp_socket.is_active();
 
                 if tcp_socket.may_recv() {
@@ -235,13 +228,11 @@ Content-Type: text/html
                     let mut req = httparse::Request::new(&mut headers);
                     let mut data_len = 0;
                     let data = tcp_socket.recv(|buffer| {
-                        log_serial!(tx, "buffer len is {}\r\n", buffer.len());
                         let mut data = [0u8; 576];
                         data_len = buffer.len();
                         for i in 0..buffer.len() {
                             data[i] = buffer[i];
                         }
-                        log_serial!(tx, "copy from slice OK\r\n");
                         (buffer.len(), data)
                     }).unwrap();
 
@@ -251,12 +242,10 @@ Content-Type: text/html
                         }
                         // Call function here
                         let _res = req.parse(&data).unwrap();
-                        log_serial!(tx, "Method was: {}\r\n", req.method.unwrap());
                         match req.method.unwrap() {
                             "GET" => {
                                 log_serial!(tx, "In GET arm\r\n");
                                 if tcp_socket.may_send() {
-                                    log_serial!(tx, "May send tcp\r\n");
                                     tcp_socket.send_slice(&hello_world[..]).unwrap();
                                     tcp_socket.close();
                                 }
@@ -278,13 +267,23 @@ Content-Type: text/html
         }
         #[cfg(not(core = "0"))]
         () => {
-            let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
+            let gpioa = dp.GPIOA.split(ccdr.peripheral.GPIOA);
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
+            let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
             let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
+            let gpioe = dp.GPIOE.split(ccdr.peripheral.GPIOE);
+
+            // - leds -----------------------------------------------------------------
 
             let mut _led_yellow = gpioe.pe1.into_push_pull_output();
-            let mut led_green = gpiob.pb0.into_push_pull_output();
+            let mut _led_green = gpiob.pb0.into_push_pull_output();
             let mut _led_red = gpiob.pb14.into_push_pull_output();
+
+            // - timer ----------------------------------------------------------------
+
+            let mut delay = _cp.SYST.delay(ccdr.clocks);
+
+            // - uart -----------------------------------------------------------------
 
             let tx = gpiod.pd8.into_alternate();
             let _rx = gpiod.pd9.into_alternate();
@@ -296,16 +295,38 @@ Content-Type: text/html
 
             let (mut tx, _rx) = serial.split();
 
-            // Get the delay provider.
-            let mut delay = _cp.SYST.delay(ccdr.clocks);
+            // - adc -----------------------------------------------------------------
+
+            log_serial!(tx, "ADC config\r\n");
+            let mut adc1 = adc::Adc::adc1(
+                dp.ADC1,
+                16.MHz(),
+                &mut delay,
+                ccdr.peripheral.ADC12,
+                &ccdr.clocks,
+            )
+            .enable();
+
+            log_serial!(tx, "Setting ADC resolution\r\n");
+            adc1.set_resolution(adc::Resolution::SixteenBit);
+
+            // - dac -----------------------------------------------------------------
+
+            log_serial!(tx, "DAC config\r\n");
+            let dac = dp.DAC.dac(gpioa.pa4, ccdr.peripheral.DAC12);
+            let mut dac = dac.calibrate_buffer(&mut delay).enable();
+            let mut channel = gpioc.pc0.into_analog(); // ANALOG IN 10
+
+            dac.set_value(2048); // set to 50% of vdda
+
+            // - main loop ------------------------------------------------------------
 
             loop {
-                log_serial!(tx, "Blinky main loop\r\n");
-                led_green.set_high();
-                delay.delay_ms(5000_u16);
-        
-                led_green.set_low();
-                delay.delay_ms(5000_u16);
+                log_serial!(tx, "Core 1 main loop\r\n");
+                let reading: u32 = adc1.read(&mut channel).unwrap();
+                let voltage = reading as f32 * (3.3 / adc1.slope() as f32);
+                log_serial!(tx, "ADC reading: {}, voltage: {}\r\n", reading, voltage);
+                delay.delay_ms(2000_u16);
             }
         }
     }
