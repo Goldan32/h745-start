@@ -2,9 +2,10 @@
 #![no_std]
 #![allow(unused_imports)]
 
+use hal::device::stk::cvr::CURRENT_R;
 use stm32h7xx_hal as hal;
 use panic_halt as _;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use core::fmt::Write;
 use cortex_m;
 use cortex_m_rt::{entry, exception};
@@ -86,6 +87,19 @@ fn main() -> ! {
 
     // Switch adc_ker_ck_input multiplexer to per_ck
     ccdr.peripheral.kernel_adc_clk_mux(AdcClkSel::Per);
+
+    // - shared variables ---------------------------------------------------------
+
+    const UNLOCKED: u8 = 0;
+    const LOCKED: u8 = 1;
+
+    #[shared]
+    static mut CURRENT_VOLTAGE: f32 = 0.0;
+
+    #[shared]
+    static CRITICAL: AtomicU8 = AtomicU8::new(UNLOCKED);
+
+    CRITICAL.store(UNLOCKED, Ordering::Release);
 
     match () {
         #[cfg(core = "0")]
@@ -182,18 +196,7 @@ fn main() -> ! {
             let tcp_tx_buffer = TcpSocketBuffer::new(&mut store.tcp_tx_buffer_storage[..]);
             let tcp_socket_handle = unsafe { ETHERNET.as_mut().unwrap().interface.add_socket(TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer)) };
 
-            let hello_world = "HTTP/1.1 200 OK
-Content-Type: text/html
-
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Hello, World!</title>
-</head>
-<body>
-    <h1>Hello, World!</h1>
-</body>
-</html>".as_bytes();
+            let mut hello_world_buf = [0u8; 512];
 
             // - timer ----------------------------------------------------------------
 
@@ -201,8 +204,6 @@ Content-Type: text/html
             let mut delay = _cp.SYST.delay(ccdr.clocks);
 
             led_red.set_low();
-
-            let mut tcp_active: bool = false;
 
             // - main loop ------------------------------------------------------------
             loop {
@@ -220,8 +221,6 @@ Content-Type: text/html
                 if !tcp_socket.is_open() {
                     tcp_socket.listen(LOCAL_PORT).unwrap();
                 }
-
-                tcp_active = tcp_socket.is_active();
 
                 if tcp_socket.may_recv() {
                     let mut headers = [httparse::EMPTY_HEADER; 16];
@@ -246,7 +245,36 @@ Content-Type: text/html
                             "GET" => {
                                 log_serial!(tx, "In GET arm\r\n");
                                 if tcp_socket.may_send() {
-                                    tcp_socket.send_slice(&hello_world[..]).unwrap();
+                                    while CRITICAL
+                                        .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+                                        .is_err()
+                                        {}
+                                    
+                                    // CRITICAL SECTION START
+                                    log_serial!(tx, "Entered critical for CORE0\r\n");
+                                    let mut display_voltage = 0f32;
+                                    unsafe {
+                                        display_voltage = CURRENT_VOLTAGE;
+                                    }
+
+                                    CRITICAL.store(UNLOCKED, Ordering::Release);
+                                    // CRITICAL SECTION END
+                                    log_serial!(tx, "Exited critical from CORE0\r\n");
+
+                                    let hello_world = write_to::show(&mut hello_world_buf,
+                                        format_args!("HTTP/1.1 200 OK
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hello, World!</title>
+</head>
+<body>
+    <h1>Current Voltage: {}</h1>
+</body>
+</html>", display_voltage)).unwrap().as_bytes();
+                                    tcp_socket.send_slice(hello_world).unwrap();
                                     tcp_socket.close();
                                 }
                             }
@@ -297,7 +325,6 @@ Content-Type: text/html
 
             // - adc -----------------------------------------------------------------
 
-            log_serial!(tx, "ADC config\r\n");
             let mut adc1 = adc::Adc::adc1(
                 dp.ADC1,
                 16.MHz(),
@@ -307,12 +334,10 @@ Content-Type: text/html
             )
             .enable();
 
-            log_serial!(tx, "Setting ADC resolution\r\n");
             adc1.set_resolution(adc::Resolution::SixteenBit);
 
             // - dac -----------------------------------------------------------------
 
-            log_serial!(tx, "DAC config\r\n");
             let dac = dp.DAC.dac(gpioa.pa4, ccdr.peripheral.DAC12);
             let mut dac = dac.calibrate_buffer(&mut delay).enable();
             let mut channel = gpioc.pc0.into_analog(); // ANALOG IN 10
@@ -326,6 +351,22 @@ Content-Type: text/html
                 let reading: u32 = adc1.read(&mut channel).unwrap();
                 let voltage = reading as f32 * (3.3 / adc1.slope() as f32);
                 log_serial!(tx, "ADC reading: {}, voltage: {}\r\n", reading, voltage);
+                while CRITICAL
+                    .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_err()
+                    {log_serial!(tx, "Stuck: {}\r", CRITICAL.load(Ordering::Relaxed));}
+
+                // CRITICAL SECTION START
+                log_serial!(tx, "Entered critical for CORE1\r\n");
+                delay.delay_ms(200_u16);
+                unsafe {
+                    CURRENT_VOLTAGE = voltage;
+                }
+
+                CRITICAL.store(UNLOCKED, Ordering::Release);
+                // CRITICAL SECTION END
+                log_serial!(tx, "Exited critical from CORE1\r\n");
+
                 delay.delay_ms(2000_u16);
             }
         }
@@ -431,5 +472,59 @@ impl<'a> Net<'a> {
             Err(smoltcp::Error::Unrecognized) => (),
             Err(_) => (),
         };
+    }
+}
+
+// format! for u8 arrays
+
+pub mod write_to {
+    use core::cmp::min;
+    use core::fmt;
+
+    pub struct WriteTo<'a> {
+        buffer: &'a mut [u8],
+        // on write error (i.e. not enough space in buffer) this grows beyond
+        // `buffer.len()`.
+        used: usize,
+    }
+
+    impl<'a> WriteTo<'a> {
+        pub fn new(buffer: &'a mut [u8]) -> Self {
+            WriteTo { buffer, used: 0 }
+        }
+
+        pub fn as_str(self) -> Option<&'a str> {
+            if self.used <= self.buffer.len() {
+                // only successful concats of str - must be a valid str.
+                use core::str::from_utf8_unchecked;
+                Some(unsafe { from_utf8_unchecked(&self.buffer[..self.used]) })
+            } else {
+                None
+            }
+        }
+    }
+
+    impl<'a> fmt::Write for WriteTo<'a> {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            if self.used > self.buffer.len() {
+                return Err(fmt::Error);
+            }
+            let remaining_buf = &mut self.buffer[self.used..];
+            let raw_s = s.as_bytes();
+            let write_num = min(raw_s.len(), remaining_buf.len());
+            remaining_buf[..write_num].copy_from_slice(&raw_s[..write_num]);
+            self.used += raw_s.len();
+            if write_num < raw_s.len() {
+                Err(fmt::Error)
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    pub fn show<'a>(buffer: &'a mut [u8], args: fmt::Arguments) -> Result<&'a str, fmt::Error> {
+        let mut w = WriteTo::new(buffer);
+        fmt::write(&mut w, args)?;
+        w.as_str().ok_or(fmt::Error)
     }
 }
