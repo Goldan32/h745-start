@@ -86,10 +86,10 @@ Use `cargo flash` utility
 
 ```bash
 # Core 0
-cargo flash --elf target/thumbv7em-none-eabihf/release/blink-0 --chip STM32H745ZITx
+cargo flash --elf target/thumbv7em-none-eabihf/release/h745-dual-core-0 --chip STM32H745ZITx
 
 # Core 1
-cargo flash --elf target/thumbv7em-none-eabihf/release/blink-1 --chip STM32H745ZITx
+cargo flash --elf target/thumbv7em-none-eabihf/release/h745-dual-core-1 --chip STM32H745ZITx
 ```
 
 ### Dual core (merged HEX image)
