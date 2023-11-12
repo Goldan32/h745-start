@@ -231,7 +231,6 @@ fn main() -> ! {
 
             // - main loop ------------------------------------------------------------
             loop {
-                log_serial!(tx, "Core 0 main loop\r\n");
                 match lan8742a.poll_link() {
                     true => led_yellow.set_high(),
                     _ => led_yellow.set_low(),
@@ -282,9 +281,8 @@ fn main() -> ! {
                                 .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
                                 .is_err()
                                 {}
-                            
+
                             // CRITICAL SECTION START
-                            log_serial!(tx, "Entered critical for CORE0\r\n");
                             let display_voltage;
                             unsafe {
                                 display_voltage = CURRENT_VOLTAGE;
@@ -292,7 +290,6 @@ fn main() -> ! {
 
                             CRITICAL.store(UNLOCKED, Ordering::Release);
                             // CRITICAL SECTION END
-                            log_serial!(tx, "Exited critical from CORE0\r\n");
 
                             let hello_world = write_to::show(&mut hello_world_buf,
                                 format_args!("{}Voltage: {}{}", WEBPAGE_UPPER, display_voltage, WEBPAGE_LOWER))
@@ -360,28 +357,41 @@ fn main() -> ! {
 
             // - main loop ------------------------------------------------------------
 
-            loop {
-                log_serial!(tx, "Core 1 main loop\r\n");
-                let reading: u32 = adc1.read(&mut channel).unwrap();
-                let voltage = reading as f32 * (3.3 / adc1.slope() as f32);
-                log_serial!(tx, "ADC reading: {}, voltage: {}\r\n", reading, voltage);
-                while CRITICAL
-                    .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
-                    .is_err()
-                    {log_serial!(tx, "Stuck: {}\r", CRITICAL.load(Ordering::Relaxed));}
+            let mut counter = 0usize;
+            let mut samples: [f32; 128] = [0f32; 128];
+            log_serial!(tx, "Init core 1\r\n");
 
-                // CRITICAL SECTION START
-                log_serial!(tx, "Entered critical for CORE1\r\n");
-                delay.delay_ms(200_u16);
-                unsafe {
-                    CURRENT_VOLTAGE = voltage;
+            loop {
+                let reading: u32 = adc1.read(&mut channel).unwrap();
+                samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
+
+
+                if counter == 127 {
+                    log_serial!(tx, "Counter is 128\r\n");
+                    counter = 0;
+                    let mut avg = 0f32;
+                    for v in samples {
+                        log_serial!(tx, "{} ", v);
+                        avg += v;
+                    }
+
+                    avg /= 128.0;
+
+                    while CRITICAL
+                        .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+                        .is_err()
+                        {log_serial!(tx, "Stuck: {}\r", CRITICAL.load(Ordering::Relaxed));}
+
+                    // CRITICAL SECTION START
+                    unsafe {
+                        CURRENT_VOLTAGE = avg;
+                    }
+
+                    CRITICAL.store(UNLOCKED, Ordering::Release);
+                    // CRITICAL SECTION END
                 }
 
-                CRITICAL.store(UNLOCKED, Ordering::Release);
-                // CRITICAL SECTION END
-                log_serial!(tx, "Exited critical from CORE1\r\n");
-
-                delay.delay_ms(2000_u16);
+                counter += 1;
             }
         }
     }
