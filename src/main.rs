@@ -50,6 +50,27 @@ const IP_LOCAL: [u8; 4] = [192, 168, 0, 139];
 const MAX_PACKET_SIZE: usize = 576;
 #[cfg(core = "0")]
 const LOCAL_PORT: u16 = 6970;
+#[cfg(core = "0")]
+const WEBPAGE_UPPER: &str =
+"HTTP/1.1 200 OK
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hello, World!</title>
+</head>
+<body>
+    <h1>";
+
+#[cfg(core = "0")]
+const WEBPAGE_LOWER: &str =
+"</h1>
+<form action=\"/\" method=\"POST\">
+  <input type=\"submit\" value=\"Change\">
+</form>
+</body>
+</html>";
 
 // - global static state ------------------------------------------------------
 #[cfg(core = "0")]
@@ -247,48 +268,38 @@ fn main() -> ! {
                         match req.method.unwrap() {
                             "GET" => {
                                 log_serial!(tx, "In GET arm\r\n");
-                                if tcp_socket.may_send() {
-                                    while CRITICAL
-                                        .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
-                                        .is_err()
-                                        {}
-                                    
-                                    // CRITICAL SECTION START
-                                    log_serial!(tx, "Entered critical for CORE0\r\n");
-                                    let display_voltage;
-                                    unsafe {
-                                        display_voltage = CURRENT_VOLTAGE;
-                                    }
-
-                                    CRITICAL.store(UNLOCKED, Ordering::Release);
-                                    // CRITICAL SECTION END
-                                    log_serial!(tx, "Exited critical from CORE0\r\n");
-
-                                    let hello_world = write_to::show(&mut hello_world_buf,
-                                        format_args!("HTTP/1.1 200 OK
-Content-Type: text/html
-
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Hello, World!</title>
-</head>
-<body>
-    <h1>Current Voltage: {}</h1>
-</body>
-</html>", display_voltage)).unwrap().as_bytes();
-                                    tcp_socket.send_slice(hello_world).unwrap();
-                                    tcp_socket.close();
-                                }
                             }
                             "POST" => {
                                 log_serial!(tx, "In POST arm\r\n");
-                                tcp_socket.close();
                             }
                             _ => {
                                 log_serial!(tx, "In ERROR arm\r\n");
                                 tcp_socket.close();
                             }
+                        }
+                        if tcp_socket.may_send() {
+                            while CRITICAL
+                                .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+                                .is_err()
+                                {}
+                            
+                            // CRITICAL SECTION START
+                            log_serial!(tx, "Entered critical for CORE0\r\n");
+                            let display_voltage;
+                            unsafe {
+                                display_voltage = CURRENT_VOLTAGE;
+                            }
+
+                            CRITICAL.store(UNLOCKED, Ordering::Release);
+                            // CRITICAL SECTION END
+                            log_serial!(tx, "Exited critical from CORE0\r\n");
+
+                            let hello_world = write_to::show(&mut hello_world_buf,
+                                format_args!("{}Voltage: {}{}", WEBPAGE_UPPER, display_voltage, WEBPAGE_LOWER))
+                                .unwrap()
+                                .as_bytes();
+                            tcp_socket.send_slice(hello_world).unwrap();
+                            tcp_socket.close();
                         }
                     }
                 }
