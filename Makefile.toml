@@ -6,8 +6,8 @@ BIN_FILE_0 = "${ARTIFACT_DIR}/image-0.bin"
 HEX_FILE_1 = "${ARTIFACT_DIR}/image-1.hex"
 ELF_FILE_1 = "${ARTIFACT_DIR}/image-1.elf"
 BIN_FILE_1 = "${ARTIFACT_DIR}/image-1.bin"
-ORIGINAL_ELF_0 = "target/thumbv7em-none-eabihf/release/blink-0"
-ORIGINAL_ELF_1 = "target/thumbv7em-none-eabihf/release/blink-1"
+ORIGINAL_ELF_0 = "target/thumbv7em-none-eabihf/release/h745-dual-core-0"
+ORIGINAL_ELF_1 = "target/thumbv7em-none-eabihf/release/h745-dual-core-1"
 MERGE_HEX = "${ARTIFACT_DIR}/merge.hex"
 
 [tasks.artifact-dir]
@@ -60,7 +60,7 @@ command = "cargo"
 toolchain = "nightly"
 args = [
     "microamp",
-    "--bin", "blink",
+    "--bin", "h745-dual-core",
     "--release", "-v"
 ]
 

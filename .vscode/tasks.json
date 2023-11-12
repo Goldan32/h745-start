@@ -19,8 +19,8 @@
             "command": "arm-none-eabi-objcopy",
             "args": [
                 "--output-target", "binary",
-                "./target/thumbv7em-none-eabihf/debug/blink",
-                "./target/thumbv7em-none-eabihf/debug/blink.bin"],
+                "./target/thumbv7em-none-eabihf/debug/h745-dual-core",
+                "./target/thumbv7em-none-eabihf/debug/h745-dual-core.bin"],
             "problemMatcher": [
                 "$rustc"
             ],
