@@ -65,12 +65,13 @@ Content-Type: text/html
 
 #[cfg(core = "0")]
 const WEBPAGE_LOWER: &str =
-"</h1>
-<form action=\"/\" method=\"POST\">
-  <input type=\"submit\" value=\"Change\">
+r#"</h1>
+<form action="/" method="POST">
+  <input type="text" id="voltage" name="voltage">
+  <input type="submit" value="Set">
 </form>
 </body>
-</html>";
+</html>"#;
 
 // - global static state ------------------------------------------------------
 #[cfg(core = "0")]
@@ -367,11 +368,9 @@ fn main() -> ! {
 
 
                 if counter == 127 {
-                    log_serial!(tx, "Counter is 128\r\n");
                     counter = 0;
                     let mut avg = 0f32;
                     for v in samples {
-                        log_serial!(tx, "{} ", v);
                         avg += v;
                     }
 
