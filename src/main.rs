@@ -271,6 +271,23 @@ fn main() -> ! {
                             }
                             "POST" => {
                                 log_serial!(tx, "In POST arm\r\n");
+                                for line in core::str::from_utf8(&data).unwrap().lines() {
+                                    let target_voltage:u16 = match line.find("voltage=") {
+                                        Some(idx) => {
+                                            let numidx = idx+"voltage=".len();
+                                            let numstr = &line[numidx..].trim_end_matches('\0');
+                                            match numstr.parse::<u16>() {
+                                                Ok(num) => {log_serial!(tx, "Got target: {}\r\n", num); num},
+                                                Err(_) => {log_serial!(tx, "Error parsing, original was: {}\r\n", &numstr);
+                                                for x in numstr.bytes() {
+                                                    log_serial!(tx, "{}", x as usize);
+                                                }
+                                                1}
+                                            }
+                                        },
+                                        None => 0
+                                    };
+                                }
                             }
                             _ => {
                                 log_serial!(tx, "In ERROR arm\r\n");
