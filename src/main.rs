@@ -41,6 +41,8 @@ macro_rules! log_serial {
 // - global constants ---------------------------------------------------------
 
 const PLL3_P: Hertz = Hertz::Hz(48_000 * 256);
+const M7_CPUID: u32 = 0x00000003;
+const M4_CPUID: u32 = 0x00000001;
 
 #[cfg(core = "0")]
 const MAC_LOCAL: [u8; 6] = [0x02, 0x00, 0x11, 0x22, 0x33, 0x44];
@@ -154,6 +156,24 @@ fn main() -> ! {
                 .serial((tx, _rx), 19200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
                 .unwrap();
             let (mut tx, _rx) = serial.split();
+
+            // - hsem -----------------------------------------------------------------
+
+            let hsem = &dp.HSEM;
+
+            hsem.r[0].write(|w| unsafe {w.bits(0x80000301)});
+            if hsem.r[0].read().lock().bit() {
+                log_serial!(tx, "llllllllllllllllllllll\r\n");
+            } else {
+                log_serial!(tx, "nnnnnnnnnnnnnnnnnnnnnn\r\n");
+            }
+
+            if hsem.r[0].read().lock().bit() {
+                log_serial!(tx, "llllllllllllllllllllll\r\n");
+            } else {
+                log_serial!(tx, "nnnnnnnnnnnnnnnnnnnnnn\r\n");
+            }
+
 
             // - ethernet -------------------------------------------------------------
 
@@ -360,7 +380,6 @@ fn main() -> ! {
 
             let mut counter = 0usize;
             let mut samples: [f32; 128] = [0f32; 128];
-            log_serial!(tx, "Init core 1\r\n");
 
             loop {
                 let reading: u32 = adc1.read(&mut channel).unwrap();
