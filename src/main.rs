@@ -377,12 +377,32 @@ fn main() -> ! {
 
             let mut counter = 0usize;
             let mut samples: [f32; 128] = [0f32; 128];
-            log_serial!(tx, "Init core 1\r\n");
+
+            const ALPHA: f32 = 0.1;
+            const BETA: f32 = 0.2;
+
+            let mut adc_value: f32 = 0.0;
+            let mut filtered_value: f32 = 0.0;
+            let mut prev_adc_value: f32 = 0.0;
+            let mut prev_filtered_value: f32 = 0.0;
 
             loop {
                 let reading: u32 = adc1.read(&mut channel).unwrap();
                 samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
 
+                adc_value = samples[counter];
+                filtered_value = ALPHA * adc_value
+                                 + (1.0 - ALPHA) * prev_filtered_value
+                                 + BETA * prev_adc_value;
+
+                prev_adc_value = adc_value;
+                prev_filtered_value = filtered_value;
+
+                let out_value: u16 = if filtered_value < 0.0 { 0 }
+                    else if filtered_value > 3.3 { 4096 }
+                    else { ((filtered_value /  adc1.slope() as f32) * 4096.0) as u16};
+
+                dac.set_value(out_value);
 
                 if counter == 127 {
                     counter = 0;
