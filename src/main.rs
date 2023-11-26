@@ -399,10 +399,13 @@ fn main() -> ! {
                 prev_filtered_value = filtered_value;
 
                 let out_value: u16 = if filtered_value < 0.0 { 0 }
-                    else if filtered_value > 3.3 { 4096 }
-                    else { ((filtered_value /  adc1.slope() as f32) * 4096.0) as u16};
+                    else if filtered_value > 3.3 { 4095 }
+                    else { ((filtered_value /  3.3) * 4096.0) as u16};
 
                 dac.set_value(out_value);
+
+                // Delay so adc is not handled too often
+                delay.delay_us(10u16);
 
                 if counter == 127 {
                     counter = 0;
