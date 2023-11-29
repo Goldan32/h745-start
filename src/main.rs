@@ -5,11 +5,15 @@
 mod utils;
 
 use hal::device::stk::cvr::CURRENT_R;
+use hal::gpio::{Edge, ExtiPin, Input, Output, PushPull};
 use stm32h7xx_hal as hal;
 use panic_halt as _;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use core::fmt::Write;
+use core::cell::{Cell, RefCell};
 use cortex_m;
+use cortex_m::peripheral::NVIC;
+use cortex_m::interrupt::{free, Mutex};
 use cortex_m_rt::{entry, exception};
 use hal::{pac, prelude::*, time::*, rcc, adc, rcc::rec::AdcClkSel, traits::DacOut};
 use hal::rcc::CoreClocks;
@@ -76,6 +80,11 @@ r#"
 </html>"#;
 
 // - global static state ------------------------------------------------------
+
+#[shared]
+static GREEN_LED: Mutex<RefCell<Option<hal::gpio::PB0<Output<PushPull>>>>> =
+    Mutex::new(RefCell::new(None));
+
 #[cfg(core = "0")]
 static ATOMIC_TIME: AtomicU32 = AtomicU32::new(0);
 
@@ -149,6 +158,10 @@ fn main() -> ! {
             let mut _led_green = gpiob.pb0.into_push_pull_output();
             led_red.set_high();
             led_yellow.set_low();
+
+            free(|cs| {
+                GREEN_LED.borrow(cs).replace(Some(_led_green));
+            });
 
             // - uart -----------------------------------------------------------------
 
@@ -426,6 +439,7 @@ fn main() -> ! {
 
                     MUTEX.store(UNLOCKED, Ordering::Release);
                     // MUTEX END
+                    toggle_green_led();
                     delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
                 }
 
@@ -579,4 +593,12 @@ struct SharedObject {
     alpha: f32,
     beta: f32,
     voltage: f32
+}
+
+fn toggle_green_led() {
+    free(|cs| {
+        if let Some(pin) = GREEN_LED.borrow(cs).borrow_mut().as_mut() {
+            pin.toggle();
+        }
+    });
 }
