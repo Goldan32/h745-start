@@ -58,16 +58,18 @@ Content-Type: text/html
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hello, World!</title>
+    <title>STM32H745 Dual Core Demo App</title>
 </head>
 <body>
-    <h1>";
+    <h1>STM32H745 Dual Core Demo App</h1>";
 
 #[cfg(core = "0")]
 const WEBPAGE_LOWER: &str =
-r#"</h1>
+r#"
+<p>The filtering will use the formula: y[0] = alpha*u[0]*(1-alpha)*y[-1] + beta*u[-1]
 <form action="/" method="POST">
-  <input type="text" id="voltage" name="voltage">
+  <input type="text" id="alpha" name="alpha" placeholder="alpha">
+  <input type="text" id="beta" name="beta" placeholder="beta">
   <input type="submit" value="Set">
 </form>
 </body>
@@ -230,6 +232,9 @@ fn main() -> ! {
 
             led_red.set_low();
 
+            let mut alpha: f32;
+            let mut beta: f32;
+
             // - main loop ------------------------------------------------------------
             loop {
                 match lan8742a.poll_link() {
@@ -271,23 +276,9 @@ fn main() -> ! {
                             }
                             "POST" => {
                                 log_serial!(tx, "In POST arm\r\n");
-                                for line in core::str::from_utf8(&data).unwrap().lines() {
-                                    let target_voltage:u16 = match line.find("voltage=") {
-                                        Some(idx) => {
-                                            let numidx = idx+"voltage=".len();
-                                            let numstr = &line[numidx..].trim_end_matches('\0');
-                                            match numstr.parse::<u16>() {
-                                                Ok(num) => {log_serial!(tx, "Got target: {}\r\n", num); num},
-                                                Err(_) => {log_serial!(tx, "Error parsing, original was: {}\r\n", &numstr);
-                                                for x in numstr.bytes() {
-                                                    log_serial!(tx, "{}", x as usize);
-                                                }
-                                                1}
-                                            }
-                                        },
-                                        None => 0
-                                    };
-                                }
+                                (alpha, beta) = extract_coefs(&data);
+                                log_serial!(tx, "Got {} and {}\r\n", alpha, beta);
+
                             }
                             _ => {
                                 log_serial!(tx, "In ERROR arm\r\n");
@@ -536,4 +527,39 @@ impl<'a> Net<'a> {
             Err(_) => (),
         };
     }
+}
+
+pub fn extract_coefs(data_buffer: &[u8]) -> (f32, f32) {
+    let mut alpha: f32 = 0.0;
+    let mut beta: f32 = 0.0;
+    for line in core::str::from_utf8(&data_buffer).unwrap().lines() {
+        match get_variable_value(&line, "alpha=") {
+            Some(num) => {alpha = num;}
+            None => ()
+        }
+        match get_variable_value(&line, "beta=") {
+            Some(num) => {beta = num;}
+            None => ()
+        }
+    }
+    (alpha, beta)
+}
+
+pub fn get_variable_value(line: &str, var_name: &str) -> Option<f32> {
+    let var: Option<f32> = match line.find(var_name) {
+        Some(idx) => {
+            let numidx = idx + var_name.len();
+            let endidx = match line[numidx..].find('&') {
+                Some(idx) => numidx + idx,
+                None => line.len()
+            };
+            let numstr = &line[numidx..endidx].trim_end_matches('\0');
+            match numstr.parse::<f32>() {
+                Ok(num) => Some(num),
+                Err(_) => None
+            }
+        }
+        None => None
+    };
+    var
 }
