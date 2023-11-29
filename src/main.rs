@@ -252,6 +252,12 @@ fn main() -> ! {
             let mut alpha: f32 = 0.1;
             let mut beta: f32 = 0.2;
 
+            // - hsem -----------------------------------------------------------------
+
+            let hsem = &dp.HSEM;
+
+            unsafe { NVIC::unmask(hal::stm32::Interrupt::HSEM0); }
+
             // - main loop ------------------------------------------------------------
             loop {
                 match lan8742a.poll_link() {
@@ -289,6 +295,13 @@ fn main() -> ! {
                         match req.method.unwrap() {
                             "GET" => {
                                 log_serial!(tx, "In GET arm\r\n");
+                                hsem.r[0].read().lock().bit();
+                                delay.delay_ms(100u16);
+                                hsem.r[0].write(|w| unsafe { w
+                                    .procid().bits(0)
+                                    .masterid().bits(3)
+                                    .lock().bit(false) }
+                                );
                             }
                             "POST" => {
                                 log_serial!(tx, "In POST arm\r\n");
@@ -439,7 +452,6 @@ fn main() -> ! {
 
                     MUTEX.store(UNLOCKED, Ordering::Release);
                     // MUTEX END
-                    toggle_green_led();
                     delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
                 }
 
@@ -601,4 +613,10 @@ fn toggle_green_led() {
             pin.toggle();
         }
     });
+}
+
+#[cfg(core = "0")]
+#[interrupt]
+fn HSEM0() {
+    toggle_green_led();
 }
