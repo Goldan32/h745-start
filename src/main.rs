@@ -121,7 +121,11 @@ fn main() -> ! {
     const LOCKED: u8 = 1;
 
     #[shared]
-    static mut CURRENT_VOLTAGE: f32 = 0.0;
+    static mut SHARED_DATA: SharedObject = SharedObject {
+        voltage: 0.0,
+        alpha: 0.1,
+        beta: 0.2,
+    };
 
     #[shared]
     static MUTEX: AtomicU8 = AtomicU8::new(UNLOCKED);
@@ -232,8 +236,8 @@ fn main() -> ! {
 
             led_red.set_low();
 
-            let mut alpha: f32;
-            let mut beta: f32;
+            let mut alpha: f32 = 0.1;
+            let mut beta: f32 = 0.2;
 
             // - main loop ------------------------------------------------------------
             loop {
@@ -293,7 +297,9 @@ fn main() -> ! {
                             // MUTEX START
                             let display_voltage;
                             unsafe {
-                                display_voltage = CURRENT_VOLTAGE;
+                                display_voltage = SHARED_DATA.voltage;
+                                SHARED_DATA.alpha = alpha;
+                                SHARED_DATA.beta = beta;
                             }
 
                             MUTEX.store(UNLOCKED, Ordering::Release);
@@ -368,8 +374,8 @@ fn main() -> ! {
             let mut counter = 0usize;
             let mut samples: [f32; 128] = [0f32; 128];
 
-            const ALPHA: f32 = 0.1;
-            const BETA: f32 = 0.2;
+            let mut alpha: f32 = 0.1;
+            let mut beta: f32 = 0.2;
 
             let mut adc_value: f32;
             let mut filtered_value: f32;
@@ -381,9 +387,9 @@ fn main() -> ! {
                 samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
 
                 adc_value = samples[counter];
-                filtered_value = ALPHA * adc_value
-                                 + (1.0 - ALPHA) * prev_filtered_value
-                                 + BETA * prev_adc_value;
+                filtered_value = alpha * adc_value
+                                 + (1.0 - alpha) * prev_filtered_value
+                                 + beta * prev_adc_value;
 
                 prev_adc_value = adc_value;
                 prev_filtered_value = filtered_value;
@@ -413,11 +419,14 @@ fn main() -> ! {
 
                     // MUTEX START
                     unsafe {
-                        CURRENT_VOLTAGE = avg;
+                        SHARED_DATA.voltage = avg;
+                        alpha = SHARED_DATA.alpha;
+                        beta = SHARED_DATA.beta;
                     }
 
                     MUTEX.store(UNLOCKED, Ordering::Release);
                     // MUTEX END
+                    delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
                 }
 
                 counter += 1;
@@ -563,4 +572,11 @@ pub fn get_variable_value(line: &str, var_name: &str) -> Option<f32> {
         None => None
     };
     var
+}
+
+#[repr(C)]
+struct SharedObject {
+    alpha: f32,
+    beta: f32,
+    voltage: f32
 }
