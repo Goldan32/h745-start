@@ -124,9 +124,9 @@ fn main() -> ! {
     static mut CURRENT_VOLTAGE: f32 = 0.0;
 
     #[shared]
-    static CRITICAL: AtomicU8 = AtomicU8::new(UNLOCKED);
+    static MUTEX: AtomicU8 = AtomicU8::new(UNLOCKED);
 
-    CRITICAL.store(UNLOCKED, Ordering::Release);
+    MUTEX.store(UNLOCKED, Ordering::Release);
 
     match () {
         #[cfg(core = "0")]
@@ -268,7 +268,6 @@ fn main() -> ! {
                         for c in data {
                             log_serial!(tx, "{}", c as char);
                         }
-                        // Call function here
                         let _res = req.parse(&data).unwrap();
                         match req.method.unwrap() {
                             "GET" => {
@@ -286,22 +285,22 @@ fn main() -> ! {
                             }
                         }
                         if tcp_socket.may_send() {
-                            while CRITICAL
+                            while MUTEX
                                 .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
                                 .is_err()
                                 {}
 
-                            // CRITICAL SECTION START
+                            // MUTEX START
                             let display_voltage;
                             unsafe {
                                 display_voltage = CURRENT_VOLTAGE;
                             }
 
-                            CRITICAL.store(UNLOCKED, Ordering::Release);
-                            // CRITICAL SECTION END
+                            MUTEX.store(UNLOCKED, Ordering::Release);
+                            // MUTEX END
 
                             let hello_world = write_to::show(&mut hello_world_buf,
-                                format_args!("{}Voltage: {}{}", WEBPAGE_UPPER, display_voltage, WEBPAGE_LOWER))
+                                format_args!("{}Average voltage: {}{}", WEBPAGE_UPPER, display_voltage, WEBPAGE_LOWER))
                                 .unwrap()
                                 .as_bytes();
                             tcp_socket.send_slice(hello_world).unwrap();
@@ -372,8 +371,8 @@ fn main() -> ! {
             const ALPHA: f32 = 0.1;
             const BETA: f32 = 0.2;
 
-            let mut adc_value: f32 = 0.0;
-            let mut filtered_value: f32 = 0.0;
+            let mut adc_value: f32;
+            let mut filtered_value: f32;
             let mut prev_adc_value: f32 = 0.0;
             let mut prev_filtered_value: f32 = 0.0;
 
@@ -407,18 +406,18 @@ fn main() -> ! {
 
                     avg /= 128.0;
 
-                    while CRITICAL
+                    while MUTEX
                         .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
                         .is_err()
-                        {log_serial!(tx, "Stuck: {}\r", CRITICAL.load(Ordering::Relaxed));}
+                        {log_serial!(tx, "Stuck: {}\r", MUTEX.load(Ordering::Relaxed));}
 
-                    // CRITICAL SECTION START
+                    // MUTEX START
                     unsafe {
                         CURRENT_VOLTAGE = avg;
                     }
 
-                    CRITICAL.store(UNLOCKED, Ordering::Release);
-                    // CRITICAL SECTION END
+                    MUTEX.store(UNLOCKED, Ordering::Release);
+                    // MUTEX END
                 }
 
                 counter += 1;
@@ -529,6 +528,7 @@ impl<'a> Net<'a> {
     }
 }
 
+#[cfg(core = "0")]
 pub fn extract_coefs(data_buffer: &[u8]) -> (f32, f32) {
     let mut alpha: f32 = 0.0;
     let mut beta: f32 = 0.0;
@@ -545,6 +545,7 @@ pub fn extract_coefs(data_buffer: &[u8]) -> (f32, f32) {
     (alpha, beta)
 }
 
+#[cfg(core = "0")]
 pub fn get_variable_value(line: &str, var_name: &str) -> Option<f32> {
     let var: Option<f32> = match line.find(var_name) {
         Some(idx) => {
