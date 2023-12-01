@@ -1,5 +1,6 @@
 use stm32h7xx_hal as hal;
 
+#[derive(Debug)]
 pub enum Error {
     InvalidHsemIndex,
 }
@@ -13,13 +14,19 @@ fn get_core_id() -> u8 {
 }
 
 pub trait Hsem {
-    fn unlock(&self, sem_id: usize) -> Result<(), Error>;
-    fn lock_2_step(&self, sem_id: usize, proc_id: u8) -> Result<u32, Error>;
-    fn lock_1_step(&self, sem_id: usize) -> Result<u32, Error>;
+    fn release(&self, sem_id: usize) -> Result<(), Error>;
+    fn lock(&self, sem_id: usize, proc_id: u8) -> Result<u32, Error>;
+    fn fast_lock(&self, sem_id: usize) -> Result<u32, Error>;
+    fn is_taken(&self, sem_id: usize) -> Result<bool, Error>;
+    fn release_all(&self, key: u16);
+    fn set_clear_key(&self, key: u16);
+    fn get_clear_key(&self) -> u16;
+    fn enable_interrupt(&self, sem_mask: u32);
+    fn disable_interrupt(&self, sem_mask: u32);
 }
 
 impl Hsem for stm32h7xx_hal::stm32::HSEM {
-    fn unlock(&self, sem_id: usize) -> Result<(), Error> {
+    fn release(&self, sem_id: usize) -> Result<(), Error> {
         if sem_id > 31 {
             Err(Error::InvalidHsemIndex)
         } else {
@@ -31,7 +38,7 @@ impl Hsem for stm32h7xx_hal::stm32::HSEM {
         }
     }
 
-    fn lock_2_step(&self, sem_id: usize, proc_id: u8) -> Result<u32, Error> {
+    fn lock(&self, sem_id: usize, proc_id: u8) -> Result<u32, Error> {
         if sem_id > 31 {
             Err(Error::InvalidHsemIndex)
         } else {
@@ -43,11 +50,44 @@ impl Hsem for stm32h7xx_hal::stm32::HSEM {
         }
     }
 
-    fn lock_1_step(&self, sem_id: usize) -> Result<u32, Error> {
+    fn fast_lock(&self, sem_id: usize) -> Result<u32, Error> {
         if sem_id > 31 {
             Err(Error::InvalidHsemIndex)
         } else {
-            Ok(self.r[sem_id].read().bits())
+            Ok(self.rlr[sem_id].read().bits())
         }
+    }
+
+    fn is_taken(&self, sem_id: usize) -> Result<bool, Error> {
+        if sem_id > 31 {
+            Err(Error::InvalidHsemIndex)
+        } else {
+            Ok(self.r[sem_id].read().lock().bit())
+        }
+    }
+
+    fn release_all(&self, key: u16) {
+        self.cr.write(|w| unsafe { w
+            .key().bits(key)
+            .masterid().bits(get_core_id())
+        });
+    }
+
+    fn set_clear_key(&self, key: u16) {
+        self.keyr.modify(|_, w| unsafe { w
+            .key().bits(key)
+        });
+    }
+
+    fn get_clear_key(&self) -> u16 {
+        self.keyr.read().key().bits()
+    }
+
+    fn enable_interrupt(&self, sem_mask: u32) {
+        self.ier.modify(|r, w| unsafe { w.bits(r.bits() | sem_mask) });
+    }
+
+    fn disable_interrupt(&self, sem_mask: u32) {
+        self.ier.modify(|r, w| unsafe { w.bits(r.bits() & !sem_mask)})
     }
 }

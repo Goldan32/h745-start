@@ -113,6 +113,10 @@ fn main() -> ! {
 
     // link SRAM3 power state to CPU1
     dp.RCC.ahb2enr.modify(|_, w| w.sram3en().set_bit());
+
+    // Enable HSEM clk
+    dp.RCC.ahb4enr.modify(|_, w| w.hsemen().set_bit());
+
     let rcc = dp.RCC.constrain();
     let mut ccdr = rcc
         .sys_ck(200.MHz()) // system clock
@@ -258,13 +262,20 @@ fn main() -> ! {
 
             let hsem = &dp.HSEM;
 
-            let _ = hsem.unlock(0);
-            delay.delay_ms(1000u16);
-            let _ = hsem.lock_1_step(0);
-            delay.delay_ms(1000u16);
-            let _ = hsem.unlock(0);
-
-            unsafe { NVIC::unmask(hal::stm32::Interrupt::HSEM0); }
+            let _ = hsem.fast_lock(0);
+            delay.delay_ms(100u16);
+            if hsem.is_taken(0).unwrap() {
+                log_serial!(tx, "Taken\r\n");
+            } else {
+                log_serial!(tx, "Free\r\n");
+            }
+            let _ = hsem.release(0);
+            delay.delay_ms(100u16);
+            if hsem.is_taken(0).unwrap() {
+                log_serial!(tx, "Taken\r\n");
+            } else {
+                log_serial!(tx, "Free\r\n");
+            }
 
             // - main loop ------------------------------------------------------------
             loop {
@@ -449,7 +460,7 @@ fn main() -> ! {
                     while MUTEX
                         .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
                         .is_err()
-                        {log_serial!(tx, "Stuck: {}\r", MUTEX.load(Ordering::Relaxed));}
+                        {}
 
                     // MUTEX START
                     unsafe {
@@ -460,7 +471,7 @@ fn main() -> ! {
 
                     MUTEX.store(UNLOCKED, Ordering::Release);
                     // MUTEX END
-                    delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
+                    //delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
                 }
 
                 counter += 1;
