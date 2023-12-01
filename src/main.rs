@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 mod utils;
+mod hsem;
 
 use hal::device::stk::cvr::CURRENT_R;
 use hal::gpio::{Edge, ExtiPin, Input, Output, PushPull};
@@ -29,6 +30,7 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
 use httparse;
 use crate::utils::write_to;
+use crate::hsem::Hsem;
 
 // - logging ------------------------------------------------------------------
 
@@ -79,10 +81,10 @@ r#"
 </body>
 </html>"#;
 
-// - global static state ------------------------------------------------------
+// - global static variables ---------------------------------------------------
 
 #[shared]
-static GREEN_LED: Mutex<RefCell<Option<hal::gpio::PB0<Output<PushPull>>>>> =
+static GreenLed: Mutex<RefCell<Option<hal::gpio::PB0<Output<PushPull>>>>> =
     Mutex::new(RefCell::new(None));
 
 #[cfg(core = "0")]
@@ -160,7 +162,7 @@ fn main() -> ! {
             led_yellow.set_low();
 
             free(|cs| {
-                GREEN_LED.borrow(cs).replace(Some(_led_green));
+                GreenLed.borrow(cs).replace(Some(_led_green));
             });
 
             // - uart -----------------------------------------------------------------
@@ -255,6 +257,12 @@ fn main() -> ! {
             // - hsem -----------------------------------------------------------------
 
             let hsem = &dp.HSEM;
+
+            let _ = hsem.unlock(0);
+            delay.delay_ms(1000u16);
+            let _ = hsem.lock_1_step(0);
+            delay.delay_ms(1000u16);
+            let _ = hsem.unlock(0);
 
             unsafe { NVIC::unmask(hal::stm32::Interrupt::HSEM0); }
 
@@ -609,7 +617,7 @@ struct SharedObject {
 
 fn toggle_green_led() {
     free(|cs| {
-        if let Some(pin) = GREEN_LED.borrow(cs).borrow_mut().as_mut() {
+        if let Some(pin) = GreenLed.borrow(cs).borrow_mut().as_mut() {
             pin.toggle();
         }
     });
