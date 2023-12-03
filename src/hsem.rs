@@ -5,7 +5,8 @@ pub enum Error {
     InvalidHsemIndex,
 }
 
-fn get_core_id() -> u8 {
+#[inline(always)]
+pub fn get_core_id() -> u8 {
     if cfg!(core = "0") {
         0x03
     } else {

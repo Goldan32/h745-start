@@ -72,7 +72,7 @@ Content-Type: text/html
 #[cfg(core = "0")]
 const WEBPAGE_LOWER: &str =
 r#"
-<p>The filtering will use the formula: y[0] = alpha*u[0]*(1-alpha)*y[-1] + beta*u[-1]
+<p>The filtering will use the formula: y[0] = alpha*u[0]+(1-alpha)*y[-1] + beta*u[-1]
 <form action="/" method="POST">
   <input type="text" id="alpha" name="alpha" placeholder="alpha">
   <input type="text" id="beta" name="beta" placeholder="beta">
