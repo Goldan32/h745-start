@@ -19,6 +19,7 @@ use cortex_m_rt::{entry, exception};
 use hal::{pac, prelude::*, time::*, rcc, adc, rcc::rec::AdcClkSel, traits::DacOut};
 use hal::rcc::CoreClocks;
 use hal::{ethernet, ethernet::PHY};
+use hal::hal::Direction;
 use pac::interrupt;
 use microamp::shared;
 use smoltcp;
@@ -416,65 +417,17 @@ fn main() -> ! {
 
             // - main loop ------------------------------------------------------------
 
-            let mut counter = 0usize;
-            let mut samples: [f32; 128] = [0f32; 128];
-
-            let mut alpha: f32 = 0.1;
-            let mut beta: f32 = 0.2;
-
-            let mut adc_value: f32;
-            let mut filtered_value: f32;
-            let mut prev_adc_value: f32 = 0.0;
-            let mut prev_filtered_value: f32 = 0.0;
+            let mut nops: u32 = 3 * 5;
 
             loop {
-                let reading: u32 = adc1.read(&mut channel).unwrap();
-                samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
-
-                adc_value = samples[counter];
-                filtered_value = alpha * adc_value
-                                 + (1.0 - alpha) * prev_filtered_value
-                                 + beta * prev_adc_value;
-
-                prev_adc_value = adc_value;
-                prev_filtered_value = filtered_value;
-
-                let out_value: u16 = if filtered_value < 0.0 { 0 }
-                    else if filtered_value > 3.3 { 4095 }
-                    else { ((filtered_value /  3.3) * 4096.0) as u16};
-
-                dac.set_value(out_value);
-
-                // Delay so adc is not handled too often
-                delay.delay_us(10u16);
-
-                if counter == 127 {
-                    counter = 0;
-                    let mut avg = 0f32;
-                    for v in samples {
-                        avg += v;
-                    }
-
-                    avg /= 128.0;
-
-                    while MUTEX
-                        .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
-                        .is_err()
-                        {}
-
-                    // MUTEX START
-                    unsafe {
-                        SHARED_DATA.voltage = avg;
-                        alpha = SHARED_DATA.alpha;
-                        beta = SHARED_DATA.beta;
-                    }
-
-                    MUTEX.store(UNLOCKED, Ordering::Release);
-                    // MUTEX END
-                    //delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
+                dac.set_value(0);
+                for i in 0..nops {
+                    cortex_m::asm::nop();
                 }
-
-                counter += 1;
+                dac.set_value(4095);
+                for i in 0..nops {
+                    cortex_m::asm::nop();
+                }
             }
         }
     }
