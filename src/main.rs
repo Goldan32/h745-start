@@ -29,6 +29,8 @@ use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Cidr};
 use httparse;
+use core::{mem, mem::MaybeUninit};
+use stm32h7xx_hal::dma::{config::BurstMode, dma::{DmaConfig, StreamsTuple}, Transfer};
 use crate::utils::write_to;
 use crate::hsem::Hsem;
 
@@ -122,6 +124,7 @@ fn main() -> ! {
         .sys_ck(200.MHz()) // system clock
         .pll1_strategy(rcc::PllConfigStrategy::Iterative) // pll1 drives system clock
         .pll3_p_ck(PLL3_P) // sai clock @ 12.288 MHz
+        .pll2_p_ck(40.MHz())
         .hclk(200.MHz())
         .pll1_r_ck(100.MHz())
       //.use_hse_crystal()                              // TODO hse oscillator @ 25 MHz
@@ -365,6 +368,25 @@ fn main() -> ! {
         }
         #[cfg(not(core = "0"))]
         () => {
+
+            #[link_section = ".axisram"]
+            static mut BUFFER: MaybeUninit<[u16; 32_768]> = MaybeUninit::uninit();
+
+            let adc_buffer: &'static mut [u16; 32_768] = {
+                // Convert an uninitialised array into an array of uninitialised
+                let buf: &mut [MaybeUninit<u16>; 32_768] =
+                    unsafe { mem::transmute(&mut BUFFER) };
+                // Initialise memory to valid values
+                for slot in buf.iter_mut() {
+                    // Never create even a _temporary_ reference to uninitialised memory
+                    unsafe {
+                        slot.as_mut_ptr().write(0);
+                    }
+                }
+                unsafe { mem::transmute(buf) }
+            };
+
+
             let gpioa = dp.GPIOA.split(ccdr.peripheral.GPIOA);
             let gpiob = dp.GPIOB.split(ccdr.peripheral.GPIOB);
             let gpioc = dp.GPIOC.split(ccdr.peripheral.GPIOC);
@@ -397,22 +419,45 @@ fn main() -> ! {
 
             let mut adc1 = adc::Adc::adc1(
                 dp.ADC1,
-                16.MHz(),
+                2.MHz(),
                 &mut delay,
                 ccdr.peripheral.ADC12,
                 &ccdr.clocks,
-            )
-            .enable();
-
+            ).enable();
             adc1.set_resolution(adc::Resolution::SixteenBit);
+
+            let mut channel = gpioc.pc0.into_analog(); // ANALOG IN 10
 
             // - dac -----------------------------------------------------------------
 
             let dac = dp.DAC.dac(gpioa.pa4, ccdr.peripheral.DAC12);
             let mut dac = dac.calibrate_buffer(&mut delay).enable();
-            let mut channel = gpioc.pc0.into_analog(); // ANALOG IN 10
 
             dac.set_value(2048); // set to 50% of vdda
+
+            // - dma -----------------------------------------------------------------
+
+            let config = DmaConfig::default()
+                .memory_increment(true)
+                .peripheral_burst(BurstMode::Burst4);
+
+            // Setup the DMA transfer on stream 0
+            let streams = StreamsTuple::new(dp.DMA1, ccdr.peripheral.DMA1);
+            let mut transfer: Transfer<_, _, _, _, _> =
+                Transfer::init(streams.0, adc1, &mut adc_buffer[..], None, config);
+
+            transfer.start(|adc| {
+                // This closure runs right after enabling the stream
+                // Start a one-shot conversion for the length of this transfer
+                adc.start_conversion_dma(&mut channel, adc::AdcDmaMode::OneShot);
+            });
+
+            // Wait for transfer to complete
+            while !transfer.get_transfer_complete_flag() {}
+
+            for b in unsafe {BUFFER.assume_init()} {
+                log_serial!(tx, "{}\r\n", b);
+            }
 
             // - main loop ------------------------------------------------------------
 
@@ -428,53 +473,53 @@ fn main() -> ! {
             let mut prev_filtered_value: f32 = 0.0;
 
             loop {
-                let reading: u32 = adc1.read(&mut channel).unwrap();
-                samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
+        //         let reading: u32 = adc1.read(&mut channel).unwrap();
+        //         samples[counter] = reading as f32 * (3.3 / adc1.slope() as f32);
 
-                adc_value = samples[counter];
-                filtered_value = alpha * adc_value
-                                 + (1.0 - alpha) * prev_filtered_value
-                                 + beta * prev_adc_value;
+        //         adc_value = samples[counter];
+        //         filtered_value = alpha * adc_value
+        //                          + (1.0 - alpha) * prev_filtered_value
+        //                          + beta * prev_adc_value;
 
-                prev_adc_value = adc_value;
-                prev_filtered_value = filtered_value;
+        //         prev_adc_value = adc_value;
+        //         prev_filtered_value = filtered_value;
 
-                let out_value: u16 = if filtered_value < 0.0 { 0 }
-                    else if filtered_value > 3.3 { 4095 }
-                    else { ((filtered_value /  3.3) * 4096.0) as u16};
+        //         let out_value: u16 = if filtered_value < 0.0 { 0 }
+        //             else if filtered_value > 3.3 { 4095 }
+        //             else { ((filtered_value /  3.3) * 4096.0) as u16};
 
-                dac.set_value(out_value);
+        //         dac.set_value(out_value);
 
-                // Delay so adc is not handled too often
-                delay.delay_us(10u16);
+        //         // Delay so adc is not handled too often
+        //         delay.delay_us(10u16);
 
-                if counter == 127 {
-                    counter = 0;
-                    let mut avg = 0f32;
-                    for v in samples {
-                        avg += v;
-                    }
+        //         if counter == 127 {
+        //             counter = 0;
+        //             let mut avg = 0f32;
+        //             for v in samples {
+        //                 avg += v;
+        //             }
 
-                    avg /= 128.0;
+        //             avg /= 128.0;
 
-                    while MUTEX
-                        .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
-                        .is_err()
-                        {}
+        //             while MUTEX
+        //                 .compare_exchange(UNLOCKED, LOCKED, Ordering::AcqRel, Ordering::Relaxed)
+        //                 .is_err()
+        //                 {}
 
-                    // MUTEX START
-                    unsafe {
-                        SHARED_DATA.voltage = avg;
-                        alpha = SHARED_DATA.alpha;
-                        beta = SHARED_DATA.beta;
-                    }
+        //             // MUTEX START
+        //             unsafe {
+        //                 SHARED_DATA.voltage = avg;
+        //                 alpha = SHARED_DATA.alpha;
+        //                 beta = SHARED_DATA.beta;
+        //             }
 
-                    MUTEX.store(UNLOCKED, Ordering::Release);
-                    // MUTEX END
-                    //delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
-                }
+        //             MUTEX.store(UNLOCKED, Ordering::Release);
+        //             // MUTEX END
+        //             //delay.delay_ms(1000u16); log_serial!(tx, "{} and {}\r\n", alpha, beta);
+        //         }
 
-                counter += 1;
+        //         counter += 1;
             }
         }
     }
