@@ -418,15 +418,23 @@ fn main() -> ! {
             // - main loop ------------------------------------------------------------
 
             let mut nops: u32 = 0;
+            let mut y1: f32 = 0.0;
+            let mut u1: f32 = 0.0;
+            let mut y0: f32 = 0.0;
+            let mut u0: f32 = 0.0;
+            let mut alpha: f32 = 0.2;
+            let mut beta: f32 = 0.0;
 
             loop {
                 let reading: u32 = adc1.read(&mut channel).unwrap();
-                let output: u16 = (reading as f32 / 16.0) as u16;
-                //log_serial!(tx, "{}\r\n", output);
+                u0 = reading as f32;
+                y0 = alpha * u0 + (1.0 - alpha) * y1 + beta * u1;
+
+                let output: u16 = (y0 / 16.0) as u16;
                 dac.set_value(output);
-                for i in 0..nops {
-                    cortex_m::asm::nop();
-                }
+                u1 = u0;
+                y1 = y0;
+                //log_serial!(tx, "{} to {}\r\n", u0, y0);
             }
         }
     }
